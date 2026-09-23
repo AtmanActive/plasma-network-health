@@ -1,0 +1,27 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "kde.network.health.rxbe3@slmail.me",
+                "Name": "AtmanActive"
+            }
+        ],
+        "Category": "Network",
+        "Description": "At-a-glance health of the network destinations you care about",
+        "EnabledByDefault": true,
+        "FormFactors": [
+            "desktop",
+            "planar"
+        ],
+        "Icon": "network-connect",
+        "Id": "com.github.atmanactive.networkhealth",
+        "License": "MIT",
+        "Name": "Network Health",
+        "Version": "1.0.0",
+        "Website": "https://github.com/AtmanActive/plasma-network-health"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationArea": "true",
+    "X-Plasma-NotificationAreaCategory": "Hardware"
+}

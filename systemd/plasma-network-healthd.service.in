@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT
+#
+# Optional. The widget starts the backend on its own; this unit is only for
+# having systemd own its lifetime instead (for example to keep it running across
+# plasmashell restarts).
+#
+# This is a CMake template: ExecStart is filled in with the path the backend was
+# actually installed to. To enable it after installing:
+#
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now plasma-network-healthd.service
+
+[Unit]
+Description=Network Health monitoring backend
+Documentation=https://github.com/AtmanActive/plasma-network-health
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/plasma-network-healthd --log-level warn
+Restart=on-failure
+RestartSec=5s
+
+# Idles at zero CPU when no widget is configured, so it never needs to exit.
+Nice=5
+Slice=background.slice
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=yes
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=graphical-session.target

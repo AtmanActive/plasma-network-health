@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
+  <kcfgfile name=""/>
+
+  <group name="General">
+    <!-- JSON array of { id, name, address, order, thresholdUs, sensitivity, enabled } -->
+    <entry name="destinations" type="String">
+      <default>[]</default>
+    </entry>
+
+    <!-- Fallback identity; Plasmoid.id is preferred when available. -->
+    <entry name="instanceId" type="String">
+      <default></default>
+    </entry>
+    <entry name="seeded" type="Bool">
+      <default>false</default>
+    </entry>
+
+    <!-- When set, destinations live in a file shared by every Network Health
+         widget instead of in this widget's own configuration. -->
+    <entry name="sharedDestinations" type="Bool">
+      <default>true</default>
+    </entry>
+    <!-- Revision of the shared list this widget last agreed with. -->
+    <entry name="sharedRevision" type="Int">
+      <default>0</default>
+    </entry>
+
+    <!-- The same arrangement for the appearance settings. -->
+    <entry name="sharedAppearance" type="Bool">
+      <default>true</default>
+    </entry>
+    <entry name="sharedAppearanceRevision" type="Int">
+      <default>0</default>
+    </entry>
+
+    <!-- Monitoring -->
+    <entry name="intervalMs" type="Int">
+      <default>1000</default>
+      <min>100</min>
+      <max>3600000</max>
+    </entry>
+    <entry name="timeoutMs" type="Int">
+      <default>1000</default>
+      <min>50</min>
+      <max>60000</max>
+    </entry>
+    <entry name="defaultThresholdUs" type="Int">
+      <default>1000</default>
+    </entry>
+    <entry name="defaultSensitivity" type="Int">
+      <default>3</default>
+    </entry>
+    <entry name="daemonPath" type="String">
+      <default></default>
+    </entry>
+
+    <!-- Appearance -->
+    <entry name="showNames" type="Bool">
+      <default>true</default>
+    </entry>
+    <entry name="showLatency" type="Bool">
+      <default>false</default>
+    </entry>
+    <entry name="ledSize" type="Int">
+      <default>14</default>
+    </entry>
+    <!-- Percent. Floored well above zero so the widget cannot be made invisible. -->
+    <entry name="contentOpacity" type="Int">
+      <default>100</default>
+      <min>20</min>
+      <max>100</max>
+    </entry>
+    <!-- Percent. May go to zero: that is how the background is turned off. -->
+    <entry name="backgroundOpacity" type="Int">
+      <default>100</default>
+      <min>0</min>
+      <max>100</max>
+    </entry>
+    <entry name="colorGood" type="Color">
+      <default>#2ecc71</default>
+    </entry>
+    <entry name="colorBad" type="Color">
+      <default>#e74c3c</default>
+    </entry>
+    <entry name="colorIdle" type="Color">
+      <default>#ffffff</default>
+    </entry>
+    <entry name="hideWhenHealthy" type="Bool">
+      <default>false</default>
+    </entry>
+  </group>
+
+</kcfg>
