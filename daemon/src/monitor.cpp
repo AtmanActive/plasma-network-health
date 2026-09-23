@@ -778,6 +778,10 @@ uint64_t Monitor::nextDeadline(uint64_t now) const
 int Monitor::run()
 {
     m_running = true;
+    // Armed straight away: starting with nothing to probe is itself idle, and
+    // waiting for the loop body to notice would mean blocking in epoll_wait
+    // with no deadline set and never coming back.
+    m_idleSinceUs = nowMonotonicUs();
     struct epoll_event events[8];
 
     while (m_running) {

@@ -323,6 +323,17 @@ systemd/       optional user unit, as a CMake template
 
 The backend can be run and inspected entirely on its own; `--help` lists its options.
 
+## Releases
+
+Releasing is a manual step, never something a push sets off. From the repository's *Actions*
+tab, run the **Release** workflow: it builds the backend, checks the widget package over, runs a
+smoke test, and opens a **draft** release with the tarballs attached. Look it over, edit the
+notes, and publish — the tag is created at that point, not before. Re-running the workflow
+replaces its own draft but refuses to touch a release you have already published.
+
+It refuses to build at all if `CMakeLists.txt` and `package/metadata.json` disagree about the
+version, so bump both together.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

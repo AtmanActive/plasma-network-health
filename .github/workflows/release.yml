@@ -1,0 +1,252 @@
+# SPDX-License-Identifier: MIT
+#
+# Builds the backend and the widget package and opens a DRAFT release for you to
+# check and publish. Nothing here runs on push: it is triggered by hand from the
+# Actions tab, and the release stays a draft until you publish it, which is also
+# when the tag is created.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (leave empty to take it from CMakeLists.txt)"
+        required: false
+        type: string
+      headline:
+        description: "Optional line to put at the top of the draft notes"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and draft
+    # Deliberately not ubuntu-latest: building against an older glibc is what
+    # lets the backend run on distributions newer than the one that built it.
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: version
+        run: |
+          set -euo pipefail
+          from_cmake=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+          from_metadata=$(python3 -c 'import json;print(json.load(open("package/metadata.json"))["KPlugin"]["Version"])')
+          wanted="${{ inputs.version }}"
+          [ -n "$wanted" ] || wanted="$from_cmake"
+
+          echo "CMakeLists.txt  : $from_cmake"
+          echo "metadata.json   : $from_metadata"
+          echo "releasing       : $wanted"
+
+          # The artefacts carry this version, so refuse to ship one that does not
+          # match what the sources say about themselves.
+          if [ "$from_cmake" != "$wanted" ] || [ "$from_metadata" != "$wanted" ]; then
+            echo "::error::version mismatch - CMakeLists.txt says $from_cmake, package/metadata.json says $from_metadata, releasing $wanted. Bump both, or drop the version input."
+            exit 1
+          fi
+          echo "version=$wanted" >> "$GITHUB_OUTPUT"
+
+      - name: Check the widget package
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxml2-utils
+
+          python3 - <<'PY'
+          import json, pathlib, re, sys
+
+          root = pathlib.Path("package")
+          metadata = json.loads((root / "metadata.json").read_text())
+          plugin = metadata["KPlugin"]
+          assert plugin["Id"] == "com.github.atmanactive.networkhealth", plugin["Id"]
+          assert metadata["KPackageStructure"] == "Plasma/Applet"
+          print("metadata.json ok:", plugin["Id"], plugin["Version"])
+
+          ui = root / "contents/ui"
+          missing = [name for name in ("main.qml", "Backend.qml", "SharedStore.qml") if not (ui / name).exists()]
+          assert not missing, f"missing: {missing}"
+
+          # Every page the config model points at has to exist, or the widget
+          # only fails when someone opens that page.
+          config = (root / "contents/config/config.qml").read_text()
+          pages = re.findall(r'source:\s*"([^"]+)"', config)
+          assert pages, "no config pages found"
+          for page in pages:
+              assert (ui / page).exists(), f"config.qml points at a missing page: {page}"
+          print("config pages ok:", ", ".join(pages))
+          PY
+
+          xmllint --noout package/contents/config/main.xml
+          echo "main.xml ok"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DSTATIC_LIBSTDCXX=ON
+          cmake --build build --parallel
+
+      - name: Smoke test the backend
+        run: |
+          set -euo pipefail
+          daemon=build/daemon/plasma-network-healthd
+
+          echo "--- linkage (libc should be the only shared dependency) ---"
+          ldd "$daemon"
+          if ldd "$daemon" | grep -qE 'libstdc\+\+|libgcc_s'; then
+            echo "::error::the backend is still linked against libstdc++/libgcc"
+            exit 1
+          fi
+
+          "$daemon" --version
+          "$daemon" --help > /dev/null
+
+          # Starts, publishes, finds nothing to do, leaves cleanly and tidies up
+          # after itself. Exercises the event loop end to end without needing
+          # ICMP to be permitted on the runner.
+          runtime=$(mktemp -d)
+          timeout 30 "$daemon" --runtime-dir "$runtime" --idle-exit 2 --log-level debug
+          test ! -e "$runtime/state.ini"  || { echo "::error::state.ini left behind"; exit 1; }
+          test ! -e "$runtime/state.json" || { echo "::error::state.json left behind"; exit 1; }
+          echo "backend starts, idles out and cleans up"
+
+      - name: Assemble the release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          name="plasma-network-health-$version"
+          mkdir -p dist "staging/$name"
+
+          # 1. Portable build: no compiler needed on the target machine.
+          install -Dm755 build/daemon/plasma-network-healthd "staging/$name/bin/plasma-network-healthd"
+          cp -r package "staging/$name/package"
+          install -Dm755 install.sh "staging/$name/install.sh"
+          install -Dm755 uninstall.sh "staging/$name/uninstall.sh"
+          install -Dm644 README.md LICENSE "staging/$name/"
+          mkdir -p "staging/$name/systemd"
+          sed 's|@CMAKE_INSTALL_FULL_BINDIR@|%h/.local/bin|' \
+            systemd/plasma-network-healthd.service.in \
+            > "staging/$name/systemd/plasma-network-healthd.service"
+          tar -C staging -czf "dist/$name-linux-x86_64.tar.gz" "$name"
+
+          # 2. Widget only, for the KDE Store. Needs the backend installed
+          #    separately, which the release notes say.
+          ( cd package && zip -qr "../dist/com.github.atmanactive.networkhealth-$version.plasmoid" . )
+
+          # 3. Source, for distribution packagers.
+          git archive --format=tar.gz --prefix="$name/" -o "dist/$name-source.tar.gz" HEAD
+
+          ( cd dist && sha256sum ./* > SHA256SUMS )
+          ls -lh dist
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the assets even if the release step fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.assets.outputs.name }}
+          path: dist/
+          retention-days: 14
+
+      - name: Write the draft notes
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          name="${{ steps.assets.outputs.name }}"
+          headline="${{ inputs.headline }}"
+
+          {
+            if [ -n "$headline" ]; then
+              printf '%s\n\n' "$headline"
+            fi
+            cat <<EOF
+          ## Install
+
+          Download \`$name-linux-x86_64.tar.gz\`, then:
+
+          \`\`\`bash
+          tar xf $name-linux-x86_64.tar.gz
+          cd $name
+          ./install.sh
+          \`\`\`
+
+          No compiler needed — the backend is prebuilt and \`libc\` is its only shared
+          dependency. Nothing is written outside your home directory and no root is required.
+
+          Then add **Network Health** from *Add Widgets*, or switch it to *Shown* in
+          *Configure System Tray → Entries*.
+
+          ## Assets
+
+          | File | What it is |
+          | --- | --- |
+          | \`$name-linux-x86_64.tar.gz\` | prebuilt backend + widget, installs with \`./install.sh\` |
+          | \`com.github.atmanactive.networkhealth-$version.plasmoid\` | the widget on its own, for the KDE Store — **needs the backend installed separately** |
+          | \`$name-source.tar.gz\` | source, for distribution packagers |
+          | \`SHA256SUMS\` | checksums for all of the above |
+
+          Packagers want the source tarball and an ordinary CMake build:
+
+          \`\`\`bash
+          cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build
+          DESTDIR="\$pkgdir" cmake --install build
+          \`\`\`
+
+          ## Requirements
+
+          KDE Plasma 6, and unprivileged ICMP — the default on every systemd distribution.
+          \`install.sh\` checks and tells you what to do if yours disagrees.
+          EOF
+          } > notes.md
+
+          echo "--- notes ---"
+          cat notes.md
+
+      - name: Open the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          tag="v$version"
+
+          # Re-running the workflow should replace its own draft rather than
+          # failing, but never touch something already published.
+          if gh release view "$tag" > /dev/null 2>&1; then
+            if [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "true" ]; then
+              echo "replacing the existing draft for $tag"
+              gh release delete "$tag" --yes
+            else
+              echo "::error::$tag is already published; bump the version instead"
+              exit 1
+            fi
+          fi
+
+          gh release create "$tag" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "Network Health $version" \
+            --notes-file notes.md \
+            dist/*
+
+          url=$(gh release view "$tag" --json url --jq .url)
+          echo "Draft release ready: $url"
+          {
+            echo "### Draft release ready"
+            echo ""
+            echo "[$tag]($url) — check it over and publish when you are happy."
+            echo ""
+            echo "The tag \`$tag\` is created when you publish, not before."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -13,17 +13,24 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 prefix=${PREFIX:-$HOME/.local}
 build=${BUILD_DIR:-$here/build}
 
-printf 'Building the backend...\n'
-# The widget is installed with kpackagetool6 below so that Plasma picks it up
-# straight away, and the systemd unit stays opt-in for a home-directory install.
-cmake -S "$here" -B "$build" \
-    -DCMAKE_INSTALL_PREFIX="$prefix" \
-    -DINSTALL_PLASMOID=OFF \
-    -DINSTALL_SYSTEMD_UNIT=OFF
-cmake --build "$build" --parallel
+if [ -x "$here/bin/plasma-network-healthd" ]; then
+    # Release tarball: the backend is already built, so no compiler is needed.
+    printf 'Installing the prebuilt backend into %s/bin...\n' "$prefix"
+    mkdir -p "$prefix/bin"
+    install -m 0755 "$here/bin/plasma-network-healthd" "$prefix/bin/plasma-network-healthd"
+else
+    printf 'Building the backend...\n'
+    # The widget is installed with kpackagetool6 below so that Plasma picks it
+    # up straight away, and the systemd unit stays opt-in for a home install.
+    cmake -S "$here" -B "$build" \
+        -DCMAKE_INSTALL_PREFIX="$prefix" \
+        -DINSTALL_PLASMOID=OFF \
+        -DINSTALL_SYSTEMD_UNIT=OFF
+    cmake --build "$build" --parallel
 
-printf 'Installing the backend into %s/bin...\n' "$prefix"
-cmake --install "$build"
+    printf 'Installing the backend into %s/bin...\n' "$prefix"
+    cmake --install "$build"
+fi
 
 printf 'Installing the widget...\n'
 if kpackagetool6 --type Plasma/Applet --list 2>/dev/null | grep -q '^com.github.atmanactive.networkhealth$'; then
