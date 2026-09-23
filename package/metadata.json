@@ -18,7 +18,7 @@
         "Id": "com.github.atmanactive.networkhealth",
         "License": "MIT",
         "Name": "Network Health",
-        "Version": "1.0.0",
+        "Version": "1.0.1",
         "Website": "https://github.com/AtmanActive/plasma-network-health"
     },
     "X-Plasma-API-Minimum-Version": "6.0",
