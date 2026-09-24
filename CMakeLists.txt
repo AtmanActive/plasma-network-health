@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(plasma-network-health
-    VERSION 1.0.1
+    VERSION 1.0.2
     DESCRIPTION "Plasma widget showing the health of your network destinations"
     HOMEPAGE_URL "https://github.com/AtmanActive/plasma-network-health"
     LANGUAGES CXX)

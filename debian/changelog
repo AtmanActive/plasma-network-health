@@ -1,0 +1,5 @@
+plasma-network-health (1.0.2) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- AtmanActive <kde.network.health.rxbe3@slmail.me>  Thu, 24 Sep 2026 01:24:00 +0100

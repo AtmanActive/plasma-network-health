@@ -1,3 +1,13 @@
-build/
+build*/
 dist/
 staging/
+
+# dpkg-buildpackage leftovers
+obj-*/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.debhelper
+debian/plasma-network-health/
+debian/plasma-network-health-dbgsym/

@@ -1,0 +1,7 @@
+#!/usr/bin/make -f
+# SPDX-License-Identifier: MIT
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@

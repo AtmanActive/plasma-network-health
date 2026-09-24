@@ -1,0 +1,32 @@
+Source: plasma-network-health
+Section: kde
+Priority: optional
+Maintainer: AtmanActive <kde.network.health.rxbe3@slmail.me>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.16)
+Standards-Version: 4.7.0
+Homepage: https://github.com/AtmanActive/plasma-network-health
+Vcs-Git: https://github.com/AtmanActive/plasma-network-health.git
+Vcs-Browser: https://github.com/AtmanActive/plasma-network-health
+Rules-Requires-Root: no
+
+Package: plasma-network-health
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Recommends: plasma-workspace
+Description: network health indicator for KDE Plasma
+ A Plasma 6 widget that answers one question at a glance: is my network still
+ fine? Each destination you configure gets a round indicator next to its name,
+ green while it answers pings quickly enough and red when it stops. In the
+ system tray it collapses to a single target icon coloured by overall health.
+ .
+ All probing happens in a separate backend process, which multiplexes every
+ destination onto one ICMP socket per address family and sends every probe that
+ is due in a single wakeup. Nothing the network does can stall plasmashell,
+ because the widget itself never performs a network operation: it only re-reads
+ a small state file the backend publishes.
+ .
+ Destinations are configured per host with a round-trip time threshold and a
+ sensitivity controlling how many consecutive bad replies are tolerated before
+ the indicator changes colour.

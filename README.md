@@ -318,6 +318,8 @@ daemon/        the backend: ICMP engine, scheduler, state publisher (C++17, no d
 package/       the Plasma 6 widget (QML)
   contents/ui/Backend.qml            everything that talks to the daemon
   contents/ui/SharedDestinations.qml keeps every widget's list in step
+debian/        Debian source packaging, built with debhelper
+packaging/     Arch PKGBUILD and Fedora spec templates
 systemd/       optional user unit, as a CMake template
 ```
 
@@ -325,14 +327,45 @@ The backend can be run and inspected entirely on its own; `--help` lists its opt
 
 ## Releases
 
-Releasing is a manual step, never something a push sets off. From the repository's *Actions*
-tab, run the **Release** workflow: it builds the backend, checks the widget package over, runs a
-smoke test, and opens a **draft** release with the tarballs attached. Look it over, edit the
-notes, and publish — the tag is created at that point, not before. Re-running the workflow
-replaces its own draft but refuses to touch a release you have already published.
+| Asset | For |
+| --- | --- |
+| `…-linux-x86_64.tar.gz` | prebuilt backend and widget, `./install.sh`, no compiler needed |
+| `plasma-network-health_…_amd64.deb` | Debian and Ubuntu, installed system-wide |
+| `…-x86_64.pkg.tar.zst` | Arch, `pacman -U` |
+| `…x86_64.rpm` | Fedora, `dnf install` |
+| `PKGBUILD` | ready to submit to the AUR |
+| `….plasmoid` | the widget alone, for the KDE Store — needs the backend separately |
+| `…-source.tar.gz` | distribution packagers |
 
-It refuses to build at all if `CMakeLists.txt` and `package/metadata.json` disagree about the
-version, so bump both together.
+The `.deb` comes from an ordinary Debian source package in `debian/`, so it builds the same way
+outside CI:
+
+```bash
+sudo apt install debhelper cmake
+dpkg-buildpackage -us -uc -b
+```
+
+debhelper drives CMake, applies Debian's hardening flags, works the library dependencies out of
+the binary with `dpkg-shlibdeps` rather than guessing them, and splits the debug symbols into a
+separate `-dbgsym` package that the release does not carry. As `dpkg-buildpackage` always does,
+the results land in the *parent* directory.
+
+The workflow then checks what came out: every file owned by root, nothing written outside
+`/usr`, a backend inside it that reports the version being released, and the `copyright` and
+`changelog.Debian.gz` that policy requires.
+
+The Arch and Fedora packages are built the same way, each inside a container of the distribution
+it targets. The dependencies a package declares only mean anything relative to the distribution
+that produced it. `packaging/arch/PKGBUILD.in` and `packaging/fedora/plasma-network-health.spec.in`
+are templates with the version filled in at build time, which is why bumping a release still only
+touches three files. Both packages are unpacked and their backend run *inside* the same container
+before being attached.
+
+The same PKGBUILD template is also published as a release asset with the source tarball's URL and
+real checksum already filled in, so submitting to the AUR is a copy away.
+
+It refuses to build at all if `CMakeLists.txt`, `package/metadata.json` and `debian/changelog`
+disagree about the version, so remember to bump all three together.
 
 ## License
 

@@ -1,0 +1,48 @@
+# Template: the release workflow fills in @VERSION@.
+Name:           plasma-network-health
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Network health indicator for KDE Plasma
+
+License:        MIT
+URL:            https://github.com/AtmanActive/plasma-network-health
+Source0:        %{name}-%{version}-source.tar.gz
+
+BuildRequires:  gcc-c++
+BuildRequires:  cmake >= 3.16
+BuildRequires:  systemd-rpm-macros
+
+Recommends:     plasma-workspace
+
+%description
+A Plasma 6 widget that answers one question at a glance: is my network still
+fine? Each destination you configure gets a round indicator next to its name,
+green while it answers pings quickly enough and red when it stops. In the
+system tray it collapses to a single target icon coloured by overall health.
+
+All probing happens in a separate backend process, which multiplexes every
+destination onto one ICMP socket per address family and sends every probe that
+is due in a single wakeup. Nothing the network does can stall plasmashell,
+because the widget itself never performs a network operation: it only re-reads
+a small state file the backend publishes.
+
+%prep
+%autosetup -n %{name}-%{version}
+
+%build
+%cmake
+%cmake_build
+
+%install
+%cmake_install
+
+%files
+%license LICENSE
+%doc README.md
+%{_bindir}/plasma-network-healthd
+%{_datadir}/plasma/plasmoids/com.github.atmanactive.networkhealth/
+%{_userunitdir}/plasma-network-healthd.service
+
+%changelog
+* Thu Sep 24 2026 AtmanActive <kde.network.health.rxbe3@slmail.me> - @VERSION@-1
+- Initial package.

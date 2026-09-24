@@ -40,17 +40,19 @@ jobs:
           set -euo pipefail
           from_cmake=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
           from_metadata=$(python3 -c 'import json;print(json.load(open("package/metadata.json"))["KPlugin"]["Version"])')
+          from_changelog=$(dpkg-parsechangelog -l debian/changelog -S Version | sed 's/-[^-]*$//')
           wanted="${{ inputs.version }}"
           [ -n "$wanted" ] || wanted="$from_cmake"
 
-          echo "CMakeLists.txt  : $from_cmake"
-          echo "metadata.json   : $from_metadata"
-          echo "releasing       : $wanted"
+          echo "CMakeLists.txt   : $from_cmake"
+          echo "metadata.json    : $from_metadata"
+          echo "debian/changelog : $from_changelog"
+          echo "releasing        : $wanted"
 
           # The artefacts carry this version, so refuse to ship one that does not
           # match what the sources say about themselves.
-          if [ "$from_cmake" != "$wanted" ] || [ "$from_metadata" != "$wanted" ]; then
-            echo "::error::version mismatch - CMakeLists.txt says $from_cmake, package/metadata.json says $from_metadata, releasing $wanted. Bump both, or drop the version input."
+          if [ "$from_cmake" != "$wanted" ] || [ "$from_metadata" != "$wanted" ] || [ "$from_changelog" != "$wanted" ]; then
+            echo "::error::version mismatch - CMakeLists.txt says $from_cmake, package/metadata.json says $from_metadata, debian/changelog says $from_changelog, releasing $wanted. Bump all three, or drop the version input."
             exit 1
           fi
           echo "version=$wanted" >> "$GITHUB_OUTPUT"
@@ -88,6 +90,19 @@ jobs:
           xmllint --noout package/contents/config/main.xml
           echo "main.xml ok"
 
+      - name: Make the source tarball
+        id: source
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          name="plasma-network-health-$version"
+          mkdir -p dist
+          # Everything downstream - Arch, Fedora and packagers - builds from
+          # this one tarball rather than from the checkout.
+          git archive --format=tar.gz --prefix="$name/" -o "dist/$name-source.tar.gz" HEAD
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -l "dist/$name-source.tar.gz"
+
       - name: Build
         run: |
           set -euo pipefail
@@ -121,13 +136,128 @@ jobs:
           test ! -e "$runtime/state.json" || { echo "::error::state.json left behind"; exit 1; }
           echo "backend starts, idles out and cleans up"
 
+      - name: Build the Debian package
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debhelper
+
+          # A distribution package links against the system libstdc++ instead of
+          # carrying its own copy, so this is a separate, ordinary build.
+          # debhelper drives CMake, applies Debian's hardening flags, computes
+          # the library dependencies and splits the debug symbols into their own
+          # package, which is not attached to the release.
+          dpkg-buildpackage -us -uc -b
+
+          # dpkg-buildpackage writes beside the source tree, not into it. Only
+          # the binary package is wanted; the debug symbols and the build
+          # metadata are dropped rather than attached to the release.
+          mkdir -p dist
+          mv "../plasma-network-health_${version}_"*.deb dist/
+          rm -f "../plasma-network-health"*"_${version}"*
+          deb=$(ls "dist/plasma-network-health_${version}_"*.deb)
+
+          echo "--- $deb ---"
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb" | awk '{print $1, $2, $6}'
+
+          # Everything has to belong to root, and nothing may land outside /usr.
+          if dpkg-deb -c "$deb" | awk '{print $2}' | sort -u | grep -qv '^root/root$'; then
+            echo "::error::the package contains files not owned by root"
+            exit 1
+          fi
+          if dpkg-deb -c "$deb" | awk '{print $6}' | grep -qvE '^\./($|usr/)'; then
+            echo "::error::the package writes outside /usr"
+            exit 1
+          fi
+
+          # And it has to contain a working backend, documented as policy wants.
+          rm -rf deb-check && dpkg-deb -x "$deb" deb-check
+          test "$(deb-check/usr/bin/plasma-network-healthd --version)" = "$version"
+          grep -q '^ExecStart=/usr/bin/plasma-network-healthd' \
+            deb-check/usr/lib/systemd/user/plasma-network-healthd.service
+          test -f deb-check/usr/share/doc/plasma-network-health/copyright
+          # A native package ships changelog.gz; a non-native one splits it into
+          # changelog.Debian.gz. Policy wants one of them, and does not care which.
+          ls deb-check/usr/share/doc/plasma-network-health/changelog*.gz > /dev/null
+          echo "package looks right"
+
+      - name: Build the Arch package
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          name="${{ steps.source.outputs.name }}"
+
+          # Built from the source tarball inside a real Arch container, because
+          # the dependencies a package declares only mean anything relative to
+          # the distribution it was built on.
+          sed -e "s/@VERSION@/$version/" \
+              -e "s|@SOURCE@|\"$name-source.tar.gz\"|" \
+              -e "s/@SHA256@/'SKIP'/" \
+              packaging/arch/PKGBUILD.in > PKGBUILD.arch
+
+          docker run --rm -v "$PWD:/src" -w /src archlinux:base-devel bash -euo pipefail -c '
+            pacman -Syu --noconfirm --needed cmake > /dev/null
+            # makepkg refuses to run as root, so build as an unprivileged user.
+            useradd -m builder
+            install -d /build
+            cp /src/PKGBUILD.arch /build/PKGBUILD
+            cp /src/dist/*-source.tar.gz /build/
+            chown -R builder /build
+            su builder -c "cd /build && makepkg --noconfirm --nocheck"
+
+            pkg=$(ls /build/*.pkg.tar.zst)
+            echo "--- $pkg ---"
+            tar --zstd -tf "$pkg"
+            tar --zstd -tf "$pkg" | grep -qx "usr/bin/plasma-network-healthd"
+            tar --zstd -tf "$pkg" | grep -q "usr/share/plasma/plasmoids/com.github.atmanactive.networkhealth/"
+
+            # Check the binary where it belongs, not on the Ubuntu host.
+            install -d /check && tar --zstd -xf "$pkg" -C /check
+            /check/usr/bin/plasma-network-healthd --version
+            cp "$pkg" /src/dist/
+          '
+          rm -f PKGBUILD.arch
+          ls -l dist/*.pkg.tar.zst
+
+      - name: Build the Fedora package
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+
+          sed "s/@VERSION@/$version/g" \
+              packaging/fedora/plasma-network-health.spec.in > plasma-network-health.spec
+
+          docker run --rm -v "$PWD:/src" -w /src fedora:latest bash -euo pipefail -c '
+            dnf -y --setopt=install_weak_deps=False install \
+              rpm-build gcc-c++ cmake systemd-rpm-macros > /dev/null
+            install -d /root/rpmbuild/SOURCES
+            cp /src/dist/*-source.tar.gz /root/rpmbuild/SOURCES/
+            rpmbuild -bb /src/plasma-network-health.spec
+
+            rpm=$(ls /root/rpmbuild/RPMS/*/plasma-network-health-*.rpm | grep -v debug)
+            echo "--- $rpm ---"
+            rpm -qip "$rpm"
+            rpm -qlp "$rpm"
+            rpm -qlp "$rpm" | grep -qx "/usr/bin/plasma-network-healthd"
+            rpm -qlp "$rpm" | grep -qx "/usr/lib/systemd/user/plasma-network-healthd.service"
+
+            install -d /check && rpm2cpio "$rpm" | ( cd /check && cpio -idm --quiet )
+            /check/usr/bin/plasma-network-healthd --version
+            cp "$rpm" /src/dist/
+          '
+          rm -f plasma-network-health.spec
+          ls -l dist/*.rpm
+
       - name: Assemble the release assets
         id: assets
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
           name="plasma-network-health-$version"
-          mkdir -p dist "staging/$name"
+          mkdir -p dist "staging/$name"   # dist/ already holds the packages
 
           # 1. Portable build: no compiler needed on the target machine.
           install -Dm755 build/daemon/plasma-network-healthd "staging/$name/bin/plasma-network-healthd"
@@ -145,14 +275,21 @@ jobs:
           #    separately, which the release notes say.
           ( cd package && zip -qr "../dist/com.github.atmanactive.networkhealth-$version.plasmoid" . )
 
-          # 3. Source, for distribution packagers.
-          git archive --format=tar.gz --prefix="$name/" -o "dist/$name-source.tar.gz" HEAD
+          # 3. An AUR-ready PKGBUILD, pointing at the source tarball this
+          #    release will publish, with its real checksum already filled in.
+          source_url="https://github.com/AtmanActive/plasma-network-health/releases/download/v$version/$name-source.tar.gz"
+          source_sha=$(sha256sum "dist/$name-source.tar.gz" | cut -d' ' -f1)
+          sed -e "s/@VERSION@/$version/" \
+              -e "s|@SOURCE@|\"$name-source.tar.gz::$source_url\"|" \
+              -e "s/@SHA256@/'$source_sha'/" \
+              packaging/arch/PKGBUILD.in > dist/PKGBUILD
 
           ( cd dist && sha256sum ./* > SHA256SUMS )
           ls -lh dist
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
-      - name: Keep the assets even if the release step fails
+      - name: Keep the assets even if a later step fails
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.assets.outputs.name }}
@@ -184,6 +321,13 @@ jobs:
           No compiler needed — the backend is prebuilt and \`libc\` is its only shared
           dependency. Nothing is written outside your home directory and no root is required.
 
+          On Debian or Ubuntu you can use the package instead, which installs system-wide for
+          every user on the machine:
+
+          \`\`\`bash
+          sudo apt install ./plasma-network-health_${version}_amd64.deb
+          \`\`\`
+
           Then add **Network Health** from *Add Widgets*, or switch it to *Shown* in
           *Configure System Tray → Entries*.
 
@@ -192,6 +336,10 @@ jobs:
           | File | What it is |
           | --- | --- |
           | \`$name-linux-x86_64.tar.gz\` | prebuilt backend + widget, installs with \`./install.sh\` |
+          | \`plasma-network-health_${version}_amd64.deb\` | Debian/Ubuntu package, installs system-wide |
+          | \`plasma-network-health-$version-1-x86_64.pkg.tar.zst\` | Arch package (\`pacman -U\`) |
+          | \`plasma-network-health-$version-1.*.x86_64.rpm\` | Fedora package (\`dnf install\`) |
+          | \`PKGBUILD\` | ready for the AUR, pointing at the source tarball below |
           | \`com.github.atmanactive.networkhealth-$version.plasmoid\` | the widget on its own, for the KDE Store — **needs the backend installed separately** |
           | \`$name-source.tar.gz\` | source, for distribution packagers |
           | \`SHA256SUMS\` | checksums for all of the above |

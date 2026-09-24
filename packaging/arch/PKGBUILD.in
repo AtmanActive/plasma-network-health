@@ -1,0 +1,30 @@
+# Maintainer: AtmanActive <kde.network.health.rxbe3@slmail.me>
+#
+# Template. The release workflow fills in @VERSION@, @SOURCE@ and @SHA256@ and
+# publishes the result as PKGBUILD alongside the release, ready for the AUR.
+pkgname=plasma-network-health
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Network health indicator for KDE Plasma'
+arch=('x86_64')
+url='https://github.com/AtmanActive/plasma-network-health'
+license=('MIT')
+depends=('glibc' 'gcc-libs')
+optdepends=('plasma-workspace: the Plasma 6 desktop the widget runs in')
+makedepends=('cmake')
+source=(@SOURCE@)
+sha256sums=(@SHA256@)
+
+build() {
+    cmake -B build -S "$pkgname-$pkgver" \
+        -DCMAKE_BUILD_TYPE=None \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -Wno-dev
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+    install -Dm644 "$pkgname-$pkgver/LICENSE" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

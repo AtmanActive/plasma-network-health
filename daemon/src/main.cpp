@@ -24,9 +24,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// Set by the build; the fallback keeps the sources compilable on their own.
+// Set by the build from the project version. The fallback keeps the sources
+// compilable on their own, and deliberately is not a real version number: a
+// hand-compiled binary should say it does not know rather than claim to be a
+// release it is not.
 #ifndef NH_VERSION
-#define NH_VERSION "1.0.0"
+#define NH_VERSION "0.0.0-unknown"
 #endif
 
 namespace {
