@@ -211,10 +211,12 @@ jobs:
             chown -R builder /build
             su builder -c "cd /build && makepkg --noconfirm --nocheck"
 
-            pkg=$(ls /build/*.pkg.tar.zst)
+            # makepkg splits the debug symbols into their own package, just as
+            # Debian does; only the real one is wanted.
+            pkg=$(ls /build/*.pkg.tar.zst | grep -v -- "-debug-")
             echo "--- $pkg ---"
             tar --zstd -tf "$pkg"
-            tar --zstd -tf "$pkg" | grep -qx "usr/bin/plasma-network-healthd"
+            tar --zstd -tf "$pkg" | grep -qE "^\\.?/?usr/bin/plasma-network-healthd$"
             tar --zstd -tf "$pkg" | grep -q "usr/share/plasma/plasmoids/com.github.atmanactive.networkhealth/"
 
             # Check the binary where it belongs, not on the Ubuntu host.
@@ -234,8 +236,9 @@ jobs:
               packaging/fedora/plasma-network-health.spec.in > plasma-network-health.spec
 
           docker run --rm -v "$PWD:/src" -w /src fedora:latest bash -euo pipefail -c '
+            # cpio is not in the base image and rpm2cpio needs it to unpack.
             dnf -y --setopt=install_weak_deps=False install \
-              rpm-build gcc-c++ cmake systemd-rpm-macros > /dev/null
+              rpm-build gcc-c++ cmake systemd-rpm-macros cpio > /dev/null
             install -d /root/rpmbuild/SOURCES
             cp /src/dist/*-source.tar.gz /root/rpmbuild/SOURCES/
             rpmbuild -bb /src/plasma-network-health.spec
