@@ -141,8 +141,11 @@ jobs:
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
 
+          # cmake is on the runner as a tarball in /usr/local, which the dpkg
+          # database knows nothing about, so dpkg-checkbuilddeps would declare
+          # the Build-Depends unmet. Install the packaged one as well.
           sudo apt-get update -qq
-          sudo apt-get install -y -qq debhelper
+          sudo apt-get install -y -qq debhelper cmake
 
           # A distribution package links against the system libstdc++ instead of
           # carrying its own copy, so this is a separate, ordinary build.
@@ -292,8 +295,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.assets.outputs.name }}
+          # Must not depend on a later step having run: this exists precisely
+          # for the runs where one did not.
+          name: plasma-network-health-${{ steps.version.outputs.version || github.run_id }}
           path: dist/
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Write the draft notes
