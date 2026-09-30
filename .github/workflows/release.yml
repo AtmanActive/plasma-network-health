@@ -215,9 +215,13 @@ jobs:
             # Debian does; only the real one is wanted.
             pkg=$(ls /build/*.pkg.tar.zst | grep -v -- "-debug-")
             echo "--- $pkg ---"
-            tar --zstd -tf "$pkg"
-            tar --zstd -tf "$pkg" | grep -qE "^\\.?/?usr/bin/plasma-network-healthd$"
-            tar --zstd -tf "$pkg" | grep -q "usr/share/plasma/plasmoids/com.github.atmanactive.networkhealth/"
+            # Listed once into a file rather than piped into grep -q: grep stops
+            # at the first match, and the SIGPIPE that gives the writer becomes
+            # a fatal 141 under "set -o pipefail".
+            tar --zstd -tf "$pkg" > /tmp/contents
+            cat /tmp/contents
+            grep -qE "^\\.?/?usr/bin/plasma-network-healthd$" /tmp/contents
+            grep -q "usr/share/plasma/plasmoids/com.github.atmanactive.networkhealth/" /tmp/contents
 
             # Check the binary where it belongs, not on the Ubuntu host.
             install -d /check && tar --zstd -xf "$pkg" -C /check
@@ -243,16 +247,18 @@ jobs:
             cp /src/dist/*-source.tar.gz /root/rpmbuild/SOURCES/
             rpmbuild -bb /src/plasma-network-health.spec
 
-            rpm=$(ls /root/rpmbuild/RPMS/*/plasma-network-health-*.rpm | grep -v debug)
-            echo "--- $rpm ---"
-            rpm -qip "$rpm"
-            rpm -qlp "$rpm"
-            rpm -qlp "$rpm" | grep -qx "/usr/bin/plasma-network-healthd"
-            rpm -qlp "$rpm" | grep -qx "/usr/lib/systemd/user/plasma-network-healthd.service"
+            pkg=$(ls /root/rpmbuild/RPMS/*/plasma-network-health-*.rpm | grep -v debug)
+            echo "--- $pkg ---"
+            rpm -qip "$pkg"
+            # Same reason as the Arch step: never pipe a listing into grep -q.
+            rpm -qlp "$pkg" > /tmp/contents
+            cat /tmp/contents
+            grep -qx "/usr/bin/plasma-network-healthd" /tmp/contents
+            grep -qx "/usr/lib/systemd/user/plasma-network-healthd.service" /tmp/contents
 
-            install -d /check && rpm2cpio "$rpm" | ( cd /check && cpio -idm --quiet )
+            install -d /check && rpm2cpio "$pkg" | ( cd /check && cpio -idm --quiet )
             /check/usr/bin/plasma-network-healthd --version
-            cp "$rpm" /src/dist/
+            cp "$pkg" /src/dist/
           '
           rm -f plasma-network-health.spec
           ls -l dist/*.rpm
