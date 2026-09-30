@@ -40,6 +40,7 @@ Item {
 
     readonly property alias model: destinationModel
     readonly property int goodCount: counters.good
+    readonly property int warnCount: counters.warn
     readonly property int badCount: counters.bad
     readonly property int unknownCount: counters.unknown
     readonly property int enabledCount: counters.enabled
@@ -93,6 +94,7 @@ Item {
     QtObject {
         id: counters
         property int good: 0
+        property int warn: 0
         property int bad: 0
         property int unknown: 0
         property int enabled: 0
@@ -313,6 +315,7 @@ Item {
 
     function recount() {
         let good = 0;
+        let warn = 0;
         let bad = 0;
         let unknown = 0;
         let enabled = 0;
@@ -324,6 +327,8 @@ Item {
             ++enabled;
             if (row.health === "good") {
                 ++good;
+            } else if (row.health === "warn") {
+                ++warn;
             } else if (row.health === "bad") {
                 ++bad;
             } else {
@@ -331,6 +336,7 @@ Item {
             }
         }
         counters.good = good;
+        counters.warn = warn;
         counters.bad = bad;
         counters.unknown = unknown;
         counters.enabled = enabled;

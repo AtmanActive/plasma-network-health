@@ -20,6 +20,7 @@ PlasmoidItem {
     readonly property bool isVertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
     readonly property color colorGood: Plasmoid.configuration.colorGood
+    readonly property color colorWarn: Plasmoid.configuration.colorWarn
     readonly property color colorBad: Plasmoid.configuration.colorBad
     readonly property color colorIdle: Plasmoid.configuration.colorIdle
     readonly property int ledSize: Plasmoid.configuration.ledSize
@@ -71,6 +72,7 @@ PlasmoidItem {
         "contentOpacity": Plasmoid.configuration.contentOpacity,
         "backgroundOpacity": Plasmoid.configuration.backgroundOpacity,
         "colorGood": Plasmoid.configuration.colorGood,
+        "colorWarn": Plasmoid.configuration.colorWarn,
         "colorBad": Plasmoid.configuration.colorBad,
         "colorIdle": Plasmoid.configuration.colorIdle,
         "hideWhenHealthy": Plasmoid.configuration.hideWhenHealthy
@@ -106,6 +108,9 @@ PlasmoidItem {
         if (shared.colorGood !== undefined) {
             configuration.colorGood = shared.colorGood;
         }
+        if (shared.colorWarn !== undefined) {
+            configuration.colorWarn = shared.colorWarn;
+        }
         if (shared.colorBad !== undefined) {
             configuration.colorBad = shared.colorBad;
         }
@@ -117,7 +122,7 @@ PlasmoidItem {
         }
     }
 
-    readonly property color overallColor: Utils.colorForState(backendItem.overall, colorGood, colorBad, colorIdle)
+    readonly property color overallColor: Utils.colorForState(backendItem.overall, colorGood, colorWarn, colorBad, colorIdle)
 
     readonly property string statusSummary: {
         if (!backendItem.daemonRunning) {
@@ -128,6 +133,9 @@ PlasmoidItem {
         }
         if (backendItem.badCount > 0) {
             return i18np("%1 destination is unhealthy", "%1 destinations are unhealthy", backendItem.badCount);
+        }
+        if (backendItem.warnCount > 0) {
+            return i18np("%1 destination is answering slowly", "%1 destinations are answering slowly", backendItem.warnCount);
         }
         if (backendItem.unknownCount > 0) {
             return i18np("Waiting for %1 destination", "Waiting for %1 destinations", backendItem.unknownCount);
@@ -164,7 +172,8 @@ PlasmoidItem {
         if (backendItem.badCount > 0) {
             return PlasmaCore.Types.NeedsAttentionStatus;
         }
-        if (Plasmoid.configuration.hideWhenHealthy && backendItem.enabledCount > 0) {
+        if (Plasmoid.configuration.hideWhenHealthy && backendItem.enabledCount > 0
+                && backendItem.warnCount === 0 && backendItem.unknownCount === 0) {
             return PlasmaCore.Types.PassiveStatus;
         }
         return PlasmaCore.Types.ActiveStatus;

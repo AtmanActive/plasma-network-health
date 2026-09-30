@@ -144,8 +144,8 @@ each with:
 | **On** | Unticked destinations are neither probed nor shown. |
 | **Name** | What appears next to the LED. |
 | **Address** | An IPv4 address, an IPv6 address (`fe80::1%eth0` works), or a host name. |
-| **Threshold** | Round-trip time, in microseconds, above which a reply counts as bad. |
-| **Sensitivity** | How many consecutive bad replies are tolerated before the LED changes. |
+| **Threshold** | Round-trip time, in microseconds, above which a reply counts as slow. |
+| **Sensitivity** | How many consecutive disagreeing replies are tolerated before the LED changes. |
 | order | The order of the rows, changed with the ↑/↓ buttons. |
 
 ### One setup shared for every widget
@@ -195,23 +195,38 @@ Import replaces the current list. It accepts that envelope or a bare array of de
 appears afterwards says what was imported and what was not, and offers **Undo**. Nothing is
 committed until you press Apply, so Cancel always backs the whole thing out.
 
-### How green host LEDs become red
+### Green, yellow and red
 
-A reply is **good** when it arrives before the timeout *and* its round-trip time is at or below
-the threshold. Lost packets, late packets, no route packets, or name does not resolve is considered **bad**.
-
-Sensitivity *N* means the indicator only changes after **> N** consecutive results of the new
-kind. At the default of 3:
-
-| Consecutive bad replies | Indicator |
+| LED | The reply |
 | --- | --- |
-| 1 | still green |
-| 2 | still green |
-| 3 | still green |
-| 4 | **red** |
+| **Green** | arrived within that destination's round-trip threshold |
+| **Yellow** | arrived, but took longer than the threshold |
+| **Red** | never arrived before the maximum wait, or there was no route to try |
 
-The same count applies on the way back: four consecutive good replies turn it green again.
-Sensitivity 0 makes every single result flip the indicator.
+Yellow is the band between a destination's own threshold and the *Give up waiting after* setting
+on the *Monitoring* page, 3000 ms by default: reachable, but slower than you asked for. The
+system tray icon shows the worst state of any destination, so one red is never hidden behind a
+dozen greens.
+
+Sensitivity *N* means the indicator only changes after **> N** consecutive replies that disagree
+with what is currently shown *and* agree with each other. At the default of 3:
+
+| Consecutive disagreeing replies | Indicator |
+| --- | --- |
+| 1 | unchanged |
+| 2 | unchanged |
+| 3 | unchanged |
+| 4 | **becomes whatever those four were saying** |
+
+So four slow replies in a row turn a green LED yellow, and four timeouts turn it red. A single
+odd reply never moves anything, and neither does an alternating mixture — the count only builds
+while consecutive replies keep agreeing with each other. The same rule applies in every
+direction, including back to green. Sensitivity 0 makes every single result flip the indicator.
+
+Because the maximum wait is longer than the probe interval, several probes are in flight at
+once, so a destination is still probed once per interval even while it is timing out. The cost
+is that a host which dies takes the maximum wait *plus* the sensitivity count to go red: with
+the defaults, about six seconds.
 
 ### About the default threshold
 
@@ -222,8 +237,8 @@ internet will need higher numbers; give `1.1.1.1` something like `30000`–`1000
 ### Monitoring settings
 
 *Configure → Monitoring* sets how often probes are sent (default once a second), how long to
-wait before a reply counts as lost, and the threshold and sensitivity that new destinations
-start with. It also shows whether the backend is running and which address families it managed
+wait before a reply counts as lost (default three seconds, which is also the yellow/red
+boundary), and the threshold and sensitivity that new destinations start with. It also shows whether the backend is running and which address families it managed
 to open.
 
 ## Appearance
@@ -234,7 +249,7 @@ them reach every widget:
 | Group | Reaches |
 | --- | --- |
 | **Indicators** — size, names, round-trip times | the list, wherever it is shown |
-| **Colours** — healthy / unhealthy / nothing to monitor | the list *and* the system tray icon |
+| **Colours** — healthy / slow / unhealthy / nothing to monitor | the list *and* the system tray icon |
 | **Desktop widget** — contents and background opacity | the desktop widget only |
 | **System tray** — hide while healthy | the tray icon only |
 

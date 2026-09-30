@@ -16,6 +16,7 @@ KCM.SimpleKCM {
     property alias cfg_ledSize: ledSizeBox.value
     property alias cfg_hideWhenHealthy: hideWhenHealthyBox.checked
     property alias cfg_colorGood: goodColorButton.color
+    property alias cfg_colorWarn: warnColorButton.color
     property alias cfg_colorBad: badColorButton.color
     property alias cfg_colorIdle: idleColorButton.color
     property int cfg_contentOpacity: 100
@@ -83,6 +84,11 @@ KCM.SimpleKCM {
         }
 
         KQuickControls.ColorButton {
+            id: warnColorButton
+            Kirigami.FormData.label: i18nc("@label:chooser", "Slow:")
+        }
+
+        KQuickControls.ColorButton {
             id: badColorButton
             Kirigami.FormData.label: i18nc("@label:chooser", "Unhealthy:")
         }
@@ -93,7 +99,7 @@ KCM.SimpleKCM {
         }
 
         QQC2.Label {
-            text: i18n("Used for the indicators and for the system tray icon, which takes the “nothing to monitor” colour when no destination is configured, the healthy colour when every destination is fine, and the unhealthy colour as soon as one is not.")
+            text: i18n("A destination is healthy when it answers within its threshold, slow when it answers but takes longer than that, and unhealthy when it stops answering altogether. The system tray icon shows the worst of them, so one unhealthy destination is never hidden behind a dozen healthy ones.")
             wrapMode: Text.WordWrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont

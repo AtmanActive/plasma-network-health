@@ -12,7 +12,10 @@
 
 namespace nh {
 
-enum class HealthState { Unknown = 0, Good = 1, Bad = 2 };
+/// Good: answered within the round-trip threshold.
+/// Warn: answered, but slower than the threshold.
+/// Bad:  did not answer before the maximum wait, or could not be reached.
+enum class HealthState { Unknown = 0, Good = 1, Warn = 2, Bad = 3 };
 
 const char *healthStateName(HealthState state);
 
@@ -29,8 +32,10 @@ struct Destination {
     // -- runtime ----------------------------------------------------------
     int prober = -1;
     HealthState state = HealthState::Unknown;
-    int goodStreak = 0;
-    int badStreak = 0;
+    /// The state the recent samples are arguing for, and how many in a row have
+    /// argued for it. Switching needs more than `sensitivity` of them.
+    HealthState candidate = HealthState::Unknown;
+    int candidateStreak = 0;
     bool haveRtt = false;
     uint64_t rttUs = 0;
     uint64_t sent = 0;
@@ -65,10 +70,19 @@ struct Prober {
     int resolveFailures = 0;
 
     uint64_t nextSendUs = 0;
-    bool pending = false;
-    uint32_t pendingSeq = 0;
-    uint64_t pendingDeadlineUs = 0;
     uint32_t sequence = 0;
+
+    /// A probe that has been sent and not yet answered or given up on. When the
+    /// maximum wait is longer than the interval there is more than one, exactly
+    /// as with ping itself; without that the probe rate would silently drop to
+    /// one per maximum-wait for every slow or unreachable host.
+    struct InFlight {
+        uint32_t seq;
+        uint64_t sentUs;
+        uint64_t deadlineUs;
+    };
+    std::vector<InFlight> inFlight;
+    size_t maxInFlight = 1;
 
     uint64_t sent = 0;
     uint64_t received = 0;
@@ -112,6 +126,7 @@ private:
     void tick(uint64_t now);
     void sendProbe(Prober &prober, uint64_t now);
     void applySample(Prober &prober, bool received, uint64_t rttUs, uint64_t now);
+    static HealthState classify(bool received, uint64_t rttUs, uint64_t thresholdUs);
     void handleReplies(uint64_t now);
     void handleResolutions(uint64_t now);
     void handleInotify();

@@ -29,6 +29,9 @@ constexpr uint64_t kClientCheckIntervalUs = 60ull * 1000000ull;
 /// state.json exists for people, not for the widget, so it is refreshed lazily.
 constexpr uint64_t kReadablePublishIntervalUs = 5ull * 1000000ull;
 constexpr uint64_t kNeverUs = ~uint64_t(0);
+/// Ceiling on probes outstanding per destination, so an absurd maximum wait
+/// cannot turn into an unbounded queue.
+constexpr uint64_t kMaxInFlight = 8;
 
 template<typename T>
 T clampValue(T value, T low, T high)
@@ -47,6 +50,7 @@ const char *healthStateName(HealthState state)
 {
     switch (state) {
     case HealthState::Good: return "good";
+    case HealthState::Warn: return "warn";
     case HealthState::Bad: return "bad";
     case HealthState::Unknown: break;
     }
@@ -189,7 +193,8 @@ bool Monitor::loadClientFile(const std::string &path, const std::string &id, Cli
     out.id = id;
     out.path = path;
     out.intervalUs = uint64_t(clampValue<long long>(document["interval_ms"].toInt(1000), 100, 3600000)) * 1000ull;
-    out.timeoutUs = uint64_t(clampValue<long long>(document["timeout_ms"].toInt(static_cast<long long>(out.intervalUs / 1000)), 50, 60000)) * 1000ull;
+    // The longest a reply may take before the destination counts as dead.
+    out.timeoutUs = uint64_t(clampValue<long long>(document["timeout_ms"].toInt(3000), 50, 60000)) * 1000ull;
 
     const Json &list = document["destinations"];
     if (!list.isArray()) {
@@ -268,8 +273,8 @@ void Monitor::reloadClients()
                 continue;
             }
             destination.state = old->state;
-            destination.goodStreak = old->goodStreak;
-            destination.badStreak = old->badStreak;
+            destination.candidate = old->candidate;
+            destination.candidateStreak = old->candidateStreak;
             destination.haveRtt = old->haveRtt;
             destination.rttUs = old->rttUs;
             destination.sent = old->sent;
@@ -345,10 +350,16 @@ void Monitor::rebuildProbers()
 
     m_minIntervalUs = 0;
     for (size_t i = 0; i < m_probers.size(); ++i) {
-        m_proberByUid[m_probers[i].uid] = i;
-        if (m_minIntervalUs == 0 || m_probers[i].intervalUs < m_minIntervalUs) {
-            m_minIntervalUs = m_probers[i].intervalUs;
+        Prober &prober = m_probers[i];
+        m_proberByUid[prober.uid] = i;
+        if (m_minIntervalUs == 0 || prober.intervalUs < m_minIntervalUs) {
+            m_minIntervalUs = prober.intervalUs;
         }
+        // Enough in flight to keep sending at the configured interval while the
+        // slowest permitted reply is still outstanding.
+        const uint64_t needed = (prober.timeoutUs + prober.intervalUs - 1) / prober.intervalUs;
+        prober.maxInFlight = size_t(std::min<uint64_t>(std::max<uint64_t>(needed, 1), kMaxInFlight));
+        prober.inFlight.reserve(prober.maxInFlight);
     }
 
     NH_DEBUG("%zu prober(s) after rebuild", m_probers.size());
@@ -418,6 +429,17 @@ void Monitor::dropExpiredClients(uint64_t now)
 // Probing
 // ---------------------------------------------------------------------------
 
+HealthState Monitor::classify(bool received, uint64_t rttUs, uint64_t thresholdUs)
+{
+    if (!received) {
+        // No answer before the maximum wait, or no route to try.
+        return HealthState::Bad;
+    }
+    // Anything that answered at all did so inside the maximum wait, because a
+    // slower reply would already have been given up on.
+    return rttUs <= thresholdUs ? HealthState::Good : HealthState::Warn;
+}
+
 void Monitor::applySample(Prober &prober, bool received, uint64_t rttUs, uint64_t now)
 {
     (void)now;
@@ -448,24 +470,32 @@ void Monitor::applySample(Prober &prober, bool received, uint64_t rttUs, uint64_
             destination.haveRtt = false;
         }
 
-        const bool good = received && rttUs <= destination.thresholdUs;
-        if (good) {
-            ++destination.goodStreak;
-            destination.badStreak = 0;
-        } else {
-            ++destination.badStreak;
-            destination.goodStreak = 0;
-        }
-
+        const HealthState sample = classify(received, rttUs, destination.thresholdUs);
         const HealthState before = destination.state;
+
         if (destination.state == HealthState::Unknown) {
             // First verdict is adopted immediately so a fresh widget shows a
             // colour within one interval instead of staying grey.
-            destination.state = good ? HealthState::Good : HealthState::Bad;
-        } else if (destination.state == HealthState::Good && destination.badStreak > destination.sensitivity) {
-            destination.state = HealthState::Bad;
-        } else if (destination.state == HealthState::Bad && destination.goodStreak > destination.sensitivity) {
-            destination.state = HealthState::Good;
+            destination.state = sample;
+            destination.candidate = sample;
+            destination.candidateStreak = 0;
+        } else if (sample == destination.state) {
+            // Still agreeing with what is shown; nothing is building up.
+            destination.candidate = sample;
+            destination.candidateStreak = 0;
+        } else {
+            // Disagreeing samples only count while they keep agreeing with each
+            // other, so a single odd reply never shifts anything.
+            if (sample == destination.candidate) {
+                ++destination.candidateStreak;
+            } else {
+                destination.candidate = sample;
+                destination.candidateStreak = 1;
+            }
+            if (destination.candidateStreak > destination.sensitivity) {
+                destination.state = sample;
+                destination.candidateStreak = 0;
+            }
         }
 
         if (destination.state != before) {
@@ -497,9 +527,7 @@ void Monitor::sendProbe(Prober &prober, uint64_t now)
 
     switch (result) {
     case SendResult::Sent:
-        prober.pending = true;
-        prober.pendingSeq = sequence;
-        prober.pendingDeadlineUs = now + prober.timeoutUs;
+        prober.inFlight.push_back(Prober::InFlight { sequence, now, now + prober.timeoutUs });
         if (prober.lastError == "unresolved address") {
             prober.lastError.clear();
         }
@@ -519,8 +547,9 @@ void Monitor::sendProbe(Prober &prober, uint64_t now)
 void Monitor::tick(uint64_t now)
 {
     for (Prober &prober : m_probers) {
-        if (prober.pending && now + kSendSlackUs >= prober.pendingDeadlineUs) {
-            prober.pending = false;
+        // Probes are sent in order, so the oldest is always the first to expire.
+        while (!prober.inFlight.empty() && now + kSendSlackUs >= prober.inFlight.front().deadlineUs) {
+            prober.inFlight.erase(prober.inFlight.begin());
             prober.lastError = "timeout";
             applySample(prober, false, 0, now);
         }
@@ -530,7 +559,7 @@ void Monitor::tick(uint64_t now)
             m_resolver.request(prober.uid, prober.host);
         }
 
-        if (!prober.pending && now + kSendSlackUs >= prober.nextSendUs) {
+        if (prober.inFlight.size() < prober.maxInFlight && now + kSendSlackUs >= prober.nextSendUs) {
             sendProbe(prober, now);
             prober.nextSendUs += prober.intervalUs;
             if (prober.nextSendUs <= now) {
@@ -554,13 +583,15 @@ void Monitor::handleReplies(uint64_t now)
             continue;
         }
         Prober &prober = m_probers[it->second];
-        if (!prober.pending || reply.seq != prober.pendingSeq) {
-            continue; // duplicate, or a reply that arrived after its timeout
+        const auto probe = std::find_if(prober.inFlight.begin(), prober.inFlight.end(),
+                                        [&](const Prober::InFlight &candidate) { return candidate.seq == reply.seq; });
+        if (probe == prober.inFlight.end()) {
+            continue; // duplicate, or a reply that arrived after we gave up
         }
         if (!prober.endpoint.matches(reply.from, reply.fromLen)) {
             continue;
         }
-        prober.pending = false;
+        prober.inFlight.erase(probe);
         prober.lastError.clear();
         const uint64_t rtt = (now > reply.sentUs) ? (now - reply.sentUs) : 0;
         applySample(prober, true, rtt, now);
@@ -617,6 +648,7 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
     for (const Client &client : m_clients) {
         Json destinations = Json::array();
         size_t good = 0;
+        size_t warn = 0;
         size_t bad = 0;
         size_t unknown = 0;
         size_t enabled = 0;
@@ -628,6 +660,7 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
                 ++enabled;
                 switch (destination.state) {
                 case HealthState::Good: ++good; break;
+                case HealthState::Warn: ++warn; break;
                 case HealthState::Bad: ++bad; break;
                 case HealthState::Unknown: ++unknown; break;
                 }
@@ -654,19 +687,24 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
                     .set("order", destination.order)
                     .set("threshold_us", double(destination.thresholdUs))
                     .set("sensitivity", destination.sensitivity)
-                    .set("good_streak", destination.goodStreak)
-                    .set("bad_streak", destination.badStreak)
+                    .set("candidate", healthStateName(destination.candidate))
+                    .set("candidate_streak", destination.candidateStreak)
+                    .set("in_flight", double(prober ? prober->inFlight.size() : 0))
                     .set("last_reply_us", double(destination.lastReplyRealUs))
                     .set("last_change_us", double(destination.lastChangeRealUs));
             }
             destinations.push(std::move(entry));
         }
 
+        // Worst state wins, so one unreachable host is never hidden behind a
+        // dozen healthy ones.
         const char *overall = "unknown";
         if (enabled == 0) {
             overall = "idle";
         } else if (bad > 0) {
             overall = "bad";
+        } else if (warn > 0) {
+            overall = "warn";
         } else if (unknown == 0) {
             overall = "good";
         }
@@ -674,6 +712,7 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
         Json counts = Json::object();
         counts.set("enabled", double(enabled))
             .set("good", double(good))
+            .set("warn", double(warn))
             .set("bad", double(bad))
             .set("unknown", double(unknown))
             .set("total", double(client.destinations.size()));
@@ -754,8 +793,8 @@ uint64_t Monitor::nextDeadline(uint64_t now) const
 {
     uint64_t deadline = kNeverUs;
     for (const Prober &prober : m_probers) {
-        if (prober.pending) {
-            deadline = std::min(deadline, prober.pendingDeadlineUs);
+        if (!prober.inFlight.empty()) {
+            deadline = std::min(deadline, prober.inFlight.front().deadlineUs);
         }
         deadline = std::min(deadline, prober.nextSendUs);
         if (!prober.numeric && !prober.resolving) {

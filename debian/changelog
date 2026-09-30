@@ -1,5 +1,11 @@
-plasma-network-health (1.0.2) unstable; urgency=medium
+plasma-network-health (1.0.3) unstable; urgency=medium
 
-  * Initial Debian packaging.
+  * Destinations now have three states: a host that answers but takes longer
+    than its round-trip threshold is shown in yellow, between healthy green and
+    unreachable red.
+  * The maximum wait for a reply is now a setting of its own, defaulting to
+    3000 ms, and no longer follows the probe interval.
+  * Probes are allowed to overlap when that wait is longer than the interval,
+    so a slow or unreachable destination is still probed once per interval.
 
- -- AtmanActive <kde.network.health.rxbe3@slmail.me>  Thu, 24 Sep 2026 01:24:00 +0100
+ -- AtmanActive <kde.network.health.rxbe3@slmail.me>  Wed, 30 Sep 2026 22:22:34 +0100

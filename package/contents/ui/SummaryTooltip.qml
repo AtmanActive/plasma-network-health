@@ -73,7 +73,7 @@ ColumnLayout {
                 implicitWidth: Kirigami.Units.iconSizes.small
                 implicitHeight: Kirigami.Units.iconSizes.small
                 haloVisible: false
-                ledColor: Utils.colorForState(health, root.colorGood, root.colorBad, root.colorIdle)
+                ledColor: Utils.colorForState(health, root.colorGood, root.colorWarn, root.colorBad, root.colorIdle)
             }
 
             PlasmaComponents.Label {

@@ -43,8 +43,9 @@
       <min>100</min>
       <max>3600000</max>
     </entry>
+    <!-- The longest a reply may take before the destination counts as dead. -->
     <entry name="timeoutMs" type="Int">
-      <default>1000</default>
+      <default>3000</default>
       <min>50</min>
       <max>60000</max>
     </entry>
@@ -82,6 +83,9 @@
     </entry>
     <entry name="colorGood" type="Color">
       <default>#2ecc71</default>
+    </entry>
+    <entry name="colorWarn" type="Color">
+      <default>#f1c40f</default>
     </entry>
     <entry name="colorBad" type="Color">
       <default>#e74c3c</default>

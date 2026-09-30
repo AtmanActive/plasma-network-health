@@ -22,9 +22,12 @@ function formatThreshold(thresholdUs) {
     return (thresholdUs / 1000).toFixed(thresholdUs % 1000 === 0 ? 0 : 2) + " ms";
 }
 
-function colorForState(state, goodColor, badColor, idleColor) {
+function colorForState(state, goodColor, warnColor, badColor, idleColor) {
     if (state === "good") {
         return goodColor;
+    }
+    if (state === "warn") {
+        return warnColor;
     }
     if (state === "bad") {
         return badColor;
@@ -206,6 +209,7 @@ function canonicalAppearance(settings) {
         contentOpacity: Math.round(Number(settings.contentOpacity)),
         backgroundOpacity: Math.round(Number(settings.backgroundOpacity)),
         colorGood: normaliseColor(settings.colorGood),
+        colorWarn: normaliseColor(settings.colorWarn),
         colorBad: normaliseColor(settings.colorBad),
         colorIdle: normaliseColor(settings.colorIdle),
         hideWhenHealthy: settings.hideWhenHealthy === true

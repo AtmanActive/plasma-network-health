@@ -79,7 +79,7 @@ KCM.SimpleKCM {
 
         QQC2.SpinBox {
             id: timeoutBox
-            Kirigami.FormData.label: i18nc("@label:spinbox", "Treat as lost after:")
+            Kirigami.FormData.label: i18nc("@label:spinbox", "Give up waiting after:")
             from: 50
             to: 60000
             stepSize: 100
@@ -89,7 +89,7 @@ KCM.SimpleKCM {
         }
 
         QQC2.Label {
-            text: i18n("One probe is in flight per destination at a time. Probes that come due at the same moment are sent together, so the interval costs the same whether you monitor one destination or a hundred.")
+            text: i18n("A destination that answers within its own threshold is healthy, one that answers but takes longer is slow, and one that does not answer before the time above is unhealthy. Probes that come due at the same moment are sent together, so the interval costs the same whether you monitor one destination or a hundred; when the wait is longer than the interval, several probes are simply in flight at once.")
             wrapMode: Text.WordWrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont

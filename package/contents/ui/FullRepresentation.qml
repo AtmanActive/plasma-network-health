@@ -94,8 +94,9 @@ Item {
                     width: ListView.view.width
                     height: full.rowHeight
 
-                    readonly property color stateColor: Utils.colorForState(health, root.colorGood, root.colorBad, root.colorIdle)
+                    readonly property color stateColor: Utils.colorForState(health, root.colorGood, root.colorWarn, root.colorBad, root.colorIdle)
                     readonly property string stateWord: health === "good" ? i18nc("@info network destination is healthy", "Good")
+                                                      : health === "warn" ? i18nc("@info destination answers, but slower than its threshold", "Slow")
                                                       : health === "bad" ? i18nc("@info network destination is unhealthy", "Bad")
                                                       : i18nc("@info network destination has not been measured yet", "Unknown")
 
