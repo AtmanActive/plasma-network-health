@@ -3,9 +3,10 @@
 A KDE Plasma 6 widget that answers one question at a glance: **is my network still fine?**
 
 You give it a list of hosts. Each one gets a round LED next to its name — green while it
-answers pings quickly enough, red when it stops. In the system tray it collapses to a single
-target icon that is white when there is nothing to watch, green while everything is fine, and
-red the moment anything is not.
+answers pings quickly enough, yellow when it answers slowly, red when it stops. Hosts that are
+switched off on purpose, like a gaming PC, can be marked *part-time* and go blue instead. In the
+system tray it collapses to a single target icon that is white when there is nothing to watch,
+green while everything is fine, and yellow or red the moment anything is not.
 
 ![The widget on the desktop](screenshots/desktop.png)
 
@@ -142,6 +143,7 @@ each with:
 | Field | Meaning |
 | --- | --- |
 | **On** | Unticked destinations are neither probed nor shown. |
+| **Part-time** | The host is often switched off on purpose; see [Part-time hosts](#part-time-hosts). |
 | **Name** | What appears next to the LED. |
 | **Address** | An IPv4 address, an IPv6 address (`fe80::1%eth0` works), or a host name. |
 | **Threshold** | Round-trip time, in microseconds, above which a reply counts as slow. |
@@ -186,22 +188,28 @@ as JSON:
   "exported": "2026-09-23T21:44:22.942Z",
   "destinations": [
     { "id": "aaa", "name": "Gateway", "address": "192.168.1.1",
-      "order": 1, "thresholdUs": 1000, "sensitivity": 3, "enabled": true }
+      "order": 1, "thresholdUs": 1000, "sensitivity": 3, "enabled": true },
+    { "id": "bbb", "name": "Gaming PC", "address": "192.168.1.20",
+      "order": 2, "thresholdUs": 1000, "sensitivity": 3, "enabled": true, "partTime": true }
   ]
 }
 ```
+
+`partTime` is only written for part-time hosts, so files exported by earlier versions import
+unchanged.
 
 Import replaces the current list. It accepts that envelope or a bare array of destinations. The message that
 appears afterwards says what was imported and what was not, and offers **Undo**. Nothing is
 committed until you press Apply, so Cancel always backs the whole thing out.
 
-### Green, yellow and red
+### Green, yellow, red and blue
 
 | LED | The reply |
 | --- | --- |
 | **Green** | arrived within that destination's round-trip threshold |
 | **Yellow** | arrived, but took longer than the threshold |
 | **Red** | never arrived before the maximum wait, or there was no route to try |
+| **Blue** | as red, but the destination is [part-time](#part-time-hosts), so that is expected |
 
 Yellow is the band between a destination's own threshold and the *Give up waiting after* setting
 on the *Monitoring* page, 3000 ms by default: reachable, but slower than you asked for. The
@@ -228,6 +236,22 @@ once, so a destination is still probed once per interval even while it is timing
 is that a host which dies takes the maximum wait *plus* the sensitivity count to go red: with
 the defaults, about six seconds.
 
+### Part-time hosts
+
+Some hosts are *supposed* to be off most of the time: a gaming PC, a laptop that only comes out
+for school, a NAS that sleeps. Tick **Part-time** for those and their being off stops being a
+problem:
+
+* when one stops answering its LED turns **blue** instead of red, and its tooltip says *Offline*;
+* an offline part-time host takes no part in the system tray icon, the summary or *Hide the icon
+  while everything is healthy* — a dozen of them switched off still leave the icon green;
+* while it is on, it is judged like any other destination, so a part-time host that answers
+  slowly still turns yellow and still counts.
+
+Getting to blue follows the same sensitivity rule as getting to red, so one lost packet from a
+running machine changes nothing. If every destination is part-time and all of them are off,
+there is nothing left to judge and the tray icon is white.
+
 ### About the default threshold
 
 The default is **1000 µs (1 ms)**, which is the right order of magnitude for a wired gateway or
@@ -249,14 +273,14 @@ them reach every widget:
 | Group | Reaches |
 | --- | --- |
 | **Indicators** — size, names, round-trip times | the list, wherever it is shown |
-| **Colours** — healthy / slow / unhealthy / nothing to monitor | the list *and* the system tray icon |
+| **Colours** — healthy / slow / unhealthy / offline / nothing to monitor | the list *and* the system tray icon |
 | **Desktop widget** — contents and background opacity | the desktop widget only |
 | **System tray** — hide while healthy | the tray icon only |
 
 By default the whole page is shared across instances, so it does not matter which widget you
 open it from.
 
-![The appearance page](screenshots/appearance.png) The system tray icon uses the same three colours for the overall
+![The appearance page](screenshots/appearance.png) The system tray icon uses the same colours for the overall
 state. "Hide the icon while everything is healthy" moves it into the tray's hidden section
 until something goes wrong.
 
@@ -317,7 +341,7 @@ Alongside the `state.ini` the widget reads, the same data is written in readable
 cat "${XDG_RUNTIME_DIR}/plasma-network-health/state.json"
 ```
 
-**A host that answers `ping` shows as bad.**
+**A host that answers `ping` stays yellow.**
 Check the threshold first — 1000 µs is very tight for anything past your own network. The
 tooltip shows the measured round-trip time next to the threshold it is being judged against.
 

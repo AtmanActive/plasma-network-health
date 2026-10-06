@@ -89,7 +89,7 @@ KCM.SimpleKCM {
         }
 
         QQC2.Label {
-            text: i18n("A destination that answers within its own threshold is healthy, one that answers but takes longer is slow, and one that does not answer before the time above is unhealthy. Probes that come due at the same moment are sent together, so the interval costs the same whether you monitor one destination or a hundred; when the wait is longer than the interval, several probes are simply in flight at once.")
+            text: i18n("A destination that answers within its own threshold is healthy, one that answers but takes longer is slow, and one that does not answer before the time above is unhealthy, or offline if it is part-time. Probes that come due at the same moment are sent together, so the interval costs the same whether you monitor one destination or a hundred; when the wait is longer than the interval, several probes are simply in flight at once.")
             wrapMode: Text.WordWrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont

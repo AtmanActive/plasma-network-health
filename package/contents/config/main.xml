@@ -90,6 +90,9 @@
     <entry name="colorBad" type="Color">
       <default>#e74c3c</default>
     </entry>
+    <entry name="colorOffline" type="Color">
+      <default>#3498db</default>
+    </entry>
     <entry name="colorIdle" type="Color">
       <default>#ffffff</default>
     </entry>

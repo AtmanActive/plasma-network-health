@@ -12,12 +12,18 @@
 
 namespace nh {
 
-/// Good: answered within the round-trip threshold.
-/// Warn: answered, but slower than the threshold.
-/// Bad:  did not answer before the maximum wait, or could not be reached.
-enum class HealthState { Unknown = 0, Good = 1, Warn = 2, Bad = 3 };
+/// Good:    answered within the round-trip threshold.
+/// Warn:    answered, but slower than the threshold.
+/// Bad:     did not answer before the maximum wait, or could not be reached.
+/// Offline: Bad, for a part-time destination. Never measured as such; it is
+///          only how Bad is reported for a host that is allowed to be off.
+enum class HealthState { Unknown = 0, Good = 1, Warn = 2, Bad = 3, Offline = 4 };
 
 const char *healthStateName(HealthState state);
+
+/// What a destination's state is reported as: a part-time host that stops
+/// answering is offline, which is expected, rather than bad.
+HealthState reportedState(HealthState state, bool partTime);
 
 struct Destination {
     // -- configuration ----------------------------------------------------
@@ -28,6 +34,9 @@ struct Destination {
     uint64_t thresholdUs = 1000;
     int sensitivity = 3;
     bool enabled = true;
+    /// Often switched off on purpose (a gaming PC, a school laptop), so not
+    /// answering is normal and never counts against the overall state.
+    bool partTime = false;
 
     // -- runtime ----------------------------------------------------------
     int prober = -1;

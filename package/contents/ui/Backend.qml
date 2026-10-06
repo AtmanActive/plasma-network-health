@@ -21,7 +21,7 @@ Item {
     property string clientId: ""
     property int intervalMs: 1000
     property int timeoutMs: 1000
-    /// Array of { id, name, address, order, thresholdUs, sensitivity, enabled }.
+    /// Array of { id, name, address, order, thresholdUs, sensitivity, enabled, partTime }.
     property var destinations: []
     /// Optional explicit path to the daemon binary.
     property string daemonPath: ""
@@ -30,7 +30,8 @@ Item {
 
     // ---- state out --------------------------------------------------------
 
-    /// "idle" | "unknown" | "good" | "bad"
+    /// "idle" | "unknown" | "good" | "warn" | "bad"; part-time destinations that
+    /// are offline never contribute.
     property string overall: "idle"
     property bool daemonRunning: false
     /// Human readable reason why nothing is being monitored, or "".
@@ -42,6 +43,7 @@ Item {
     readonly property int goodCount: counters.good
     readonly property int warnCount: counters.warn
     readonly property int badCount: counters.bad
+    readonly property int offlineCount: counters.offline
     readonly property int unknownCount: counters.unknown
     readonly property int enabledCount: counters.enabled
 
@@ -85,7 +87,8 @@ Item {
                 "order": destination.order,
                 "threshold_us": destination.thresholdUs,
                 "sensitivity": destination.sensitivity,
-                "enabled": destination.enabled
+                "enabled": destination.enabled,
+                "part_time": destination.partTime === true
             });
         }
         return JSON.stringify(payload);
@@ -96,6 +99,7 @@ Item {
         property int good: 0
         property int warn: 0
         property int bad: 0
+        property int offline: 0
         property int unknown: 0
         property int enabled: 0
     }
@@ -292,6 +296,7 @@ Item {
                 "thresholdUs": destination.thresholdUs,
                 "sensitivity": destination.sensitivity,
                 "enabled": destination.enabled,
+                "partTime": destination.partTime === true,
                 "health": carried.health !== undefined ? carried.health : "unknown",
                 "resolved": carried.resolved !== undefined ? carried.resolved : "",
                 "rttUs": carried.rttUs !== undefined ? carried.rttUs : 0,
@@ -317,6 +322,7 @@ Item {
         let good = 0;
         let warn = 0;
         let bad = 0;
+        let offline = 0;
         let unknown = 0;
         let enabled = 0;
         for (let r = 0; r < destinationModel.count; ++r) {
@@ -331,6 +337,8 @@ Item {
                 ++warn;
             } else if (row.health === "bad") {
                 ++bad;
+            } else if (row.health === "offline") {
+                ++offline;
             } else {
                 ++unknown;
             }
@@ -338,8 +346,24 @@ Item {
         counters.good = good;
         counters.warn = warn;
         counters.bad = bad;
+        counters.offline = offline;
         counters.unknown = unknown;
         counters.enabled = enabled;
+
+        // The same rule the daemon applies, worked out here from what is shown
+        // so the icon can never disagree with the LEDs. Worst state wins, and
+        // part-time destinations that are off take no part at all.
+        if (enabled === offline) {
+            overall = "idle";
+        } else if (bad > 0) {
+            overall = "bad";
+        } else if (warn > 0) {
+            overall = "warn";
+        } else if (unknown > 0) {
+            overall = "unknown";
+        } else {
+            overall = "good";
+        }
     }
 
     function clearLiveState(message) {
@@ -350,7 +374,6 @@ Item {
             assign(r, row, "message", message);
         }
         recount();
-        overall = destinationModel.count > 0 ? "unknown" : "idle";
     }
 
     // ---- polling ----------------------------------------------------------
@@ -391,7 +414,9 @@ Item {
                 assign(r, row, "haveRtt", false);
                 continue;
             }
-            assign(r, row, "health", live.state);
+            // A backend from before part-time hosts existed may still be running
+            // after an upgrade; it reports them as bad.
+            assign(r, row, "health", live.state === "bad" && row.partTime ? "offline" : live.state);
             assign(r, row, "resolved", live.resolved || "");
             assign(r, row, "haveRtt", live.have_rtt === true);
             assign(r, row, "rttUs", live.rtt_us);
@@ -402,7 +427,6 @@ Item {
         }
 
         recount();
-        overall = client.overall;
 
         // The daemon only knows what we last told it; if the user edited the
         // config while the daemon was down, push it again.

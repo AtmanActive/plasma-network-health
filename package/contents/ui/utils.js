@@ -22,7 +22,7 @@ function formatThreshold(thresholdUs) {
     return (thresholdUs / 1000).toFixed(thresholdUs % 1000 === 0 ? 0 : 2) + " ms";
 }
 
-function colorForState(state, goodColor, warnColor, badColor, idleColor) {
+function colorForState(state, goodColor, warnColor, badColor, offlineColor, idleColor) {
     if (state === "good") {
         return goodColor;
     }
@@ -31,6 +31,9 @@ function colorForState(state, goodColor, warnColor, badColor, idleColor) {
     }
     if (state === "bad") {
         return badColor;
+    }
+    if (state === "offline") {
+        return offlineColor;
     }
     return idleColor;
 }
@@ -83,7 +86,7 @@ function canonicalDestinations(list) {
     var normalised = [];
     for (var i = 0; i < list.length; ++i) {
         var entry = list[i] || {};
-        normalised.push({
+        var destination = {
             id: String(entry.id === undefined ? "" : entry.id),
             name: String(entry.name === undefined ? "" : entry.name),
             address: String(entry.address === undefined ? "" : entry.address),
@@ -91,7 +94,13 @@ function canonicalDestinations(list) {
             thresholdUs: Number(entry.thresholdUs === undefined ? 1000 : entry.thresholdUs),
             sensitivity: Number(entry.sensitivity === undefined ? 3 : entry.sensitivity),
             enabled: entry.enabled !== false
-        });
+        };
+        // Only spelled out when set, so lists and exported files from before
+        // part-time hosts existed keep comparing equal to themselves.
+        if (entry.partTime === true) {
+            destination.partTime = true;
+        }
+        normalised.push(destination);
     }
     normalised.sort(function (a, b) {
         return (a.order - b.order) || a.id.localeCompare(b.id);
@@ -182,7 +191,8 @@ function importDocument(text, defaultThresholdUs, defaultSensitivity, maximum) {
             order: out.length + 1,
             thresholdUs: Math.round(threshold),
             sensitivity: Math.round(sensitivity),
-            enabled: entry.enabled !== false
+            enabled: entry.enabled !== false,
+            partTime: entry.partTime === true
         });
     }
 
@@ -211,6 +221,7 @@ function canonicalAppearance(settings) {
         colorGood: normaliseColor(settings.colorGood),
         colorWarn: normaliseColor(settings.colorWarn),
         colorBad: normaliseColor(settings.colorBad),
+        colorOffline: normaliseColor(settings.colorOffline),
         colorIdle: normaliseColor(settings.colorIdle),
         hideWhenHealthy: settings.hideWhenHealthy === true
     });

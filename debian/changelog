@@ -1,3 +1,13 @@
+plasma-network-health (1.0.4) unstable; urgency=medium
+
+  * Destinations can be marked part-time, for hosts that are often switched
+    off on purpose. When one stops answering its indicator turns blue instead
+    of red and it takes no part in the overall status.
+  * The colour for offline part-time hosts is configurable, defaulting to blue.
+  * Help texts on the Destinations page describe the yellow state correctly.
+
+ -- AtmanActive <kde.network.health.rxbe3@slmail.me>  Tue, 06 Oct 2026 13:18:23 +0100
+
 plasma-network-health (1.0.3) unstable; urgency=medium
 
   * Destinations now have three states: a host that answers but takes longer

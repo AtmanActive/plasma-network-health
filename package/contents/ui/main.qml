@@ -22,6 +22,7 @@ PlasmoidItem {
     readonly property color colorGood: Plasmoid.configuration.colorGood
     readonly property color colorWarn: Plasmoid.configuration.colorWarn
     readonly property color colorBad: Plasmoid.configuration.colorBad
+    readonly property color colorOffline: Plasmoid.configuration.colorOffline
     readonly property color colorIdle: Plasmoid.configuration.colorIdle
     readonly property int ledSize: Plasmoid.configuration.ledSize
     /// Applies to the list of destinations, not to the panel or tray icon: a
@@ -74,6 +75,7 @@ PlasmoidItem {
         "colorGood": Plasmoid.configuration.colorGood,
         "colorWarn": Plasmoid.configuration.colorWarn,
         "colorBad": Plasmoid.configuration.colorBad,
+        "colorOffline": Plasmoid.configuration.colorOffline,
         "colorIdle": Plasmoid.configuration.colorIdle,
         "hideWhenHealthy": Plasmoid.configuration.hideWhenHealthy
     })
@@ -114,6 +116,9 @@ PlasmoidItem {
         if (shared.colorBad !== undefined) {
             configuration.colorBad = shared.colorBad;
         }
+        if (shared.colorOffline !== undefined) {
+            configuration.colorOffline = shared.colorOffline;
+        }
         if (shared.colorIdle !== undefined) {
             configuration.colorIdle = shared.colorIdle;
         }
@@ -122,7 +127,7 @@ PlasmoidItem {
         }
     }
 
-    readonly property color overallColor: Utils.colorForState(backendItem.overall, colorGood, colorWarn, colorBad, colorIdle)
+    readonly property color overallColor: Utils.colorForState(backendItem.overall, colorGood, colorWarn, colorBad, colorOffline, colorIdle)
 
     readonly property string statusSummary: {
         if (!backendItem.daemonRunning) {
@@ -139,6 +144,15 @@ PlasmoidItem {
         }
         if (backendItem.unknownCount > 0) {
             return i18np("Waiting for %1 destination", "Waiting for %1 destinations", backendItem.unknownCount);
+        }
+        const offline = backendItem.offlineCount;
+        if (offline === backendItem.enabledCount) {
+            return i18np("The only destination is part-time and offline",
+                         "All %1 destinations are part-time and offline", offline);
+        }
+        if (offline > 0) {
+            return i18nc("@info healthy and offline part-time destination counts", "%1 healthy, %2 offline",
+                         backendItem.enabledCount - offline, offline);
         }
         return i18np("The only destination is healthy", "All %1 destinations are healthy", backendItem.enabledCount);
     }

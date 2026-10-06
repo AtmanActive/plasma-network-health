@@ -18,6 +18,7 @@ KCM.SimpleKCM {
     property alias cfg_colorGood: goodColorButton.color
     property alias cfg_colorWarn: warnColorButton.color
     property alias cfg_colorBad: badColorButton.color
+    property alias cfg_colorOffline: offlineColorButton.color
     property alias cfg_colorIdle: idleColorButton.color
     property int cfg_contentOpacity: 100
     property int cfg_backgroundOpacity: 100
@@ -94,12 +95,17 @@ KCM.SimpleKCM {
         }
 
         KQuickControls.ColorButton {
+            id: offlineColorButton
+            Kirigami.FormData.label: i18nc("@label:chooser", "Offline:")
+        }
+
+        KQuickControls.ColorButton {
             id: idleColorButton
             Kirigami.FormData.label: i18nc("@label:chooser", "Nothing to monitor:")
         }
 
         QQC2.Label {
-            text: i18n("A destination is healthy when it answers within its threshold, slow when it answers but takes longer than that, and unhealthy when it stops answering altogether. The system tray icon shows the worst of them, so one unhealthy destination is never hidden behind a dozen healthy ones.")
+            text: i18n("A destination is healthy when it answers within its threshold, slow when it answers but takes longer than that, and unhealthy when it stops answering altogether. A part-time destination that stops answering is offline instead, which is expected and leaves the system tray icon alone. The icon shows the worst of the rest, so one unhealthy destination is never hidden behind a dozen healthy ones.")
             wrapMode: Text.WordWrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont

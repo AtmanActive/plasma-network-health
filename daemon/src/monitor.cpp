@@ -52,9 +52,15 @@ const char *healthStateName(HealthState state)
     case HealthState::Good: return "good";
     case HealthState::Warn: return "warn";
     case HealthState::Bad: return "bad";
+    case HealthState::Offline: return "offline";
     case HealthState::Unknown: break;
     }
     return "unknown";
+}
+
+HealthState reportedState(HealthState state, bool partTime)
+{
+    return partTime && state == HealthState::Bad ? HealthState::Offline : state;
 }
 
 Monitor::Monitor(MonitorOptions options)
@@ -220,6 +226,7 @@ bool Monitor::loadClientFile(const std::string &path, const std::string &id, Cli
         destination.thresholdUs = uint64_t(clampValue<long long>(entry["threshold_us"].toInt(1000), 1, 60000000));
         destination.sensitivity = int(clampValue<long long>(entry["sensitivity"].toInt(3), 0, 1000));
         destination.enabled = entry["enabled"].isNull() ? true : entry["enabled"].toBool(true);
+        destination.partTime = entry["part_time"].toBool(false);
         out.destinations.push_back(std::move(destination));
     }
 
@@ -650,18 +657,21 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
         size_t good = 0;
         size_t warn = 0;
         size_t bad = 0;
+        size_t offline = 0;
         size_t unknown = 0;
         size_t enabled = 0;
 
         for (const Destination &destination : client.destinations) {
             const Prober *prober = (destination.prober >= 0 && size_t(destination.prober) < m_probers.size()) ? &m_probers[size_t(destination.prober)] : nullptr;
+            const HealthState shown = reportedState(destination.state, destination.partTime);
 
             if (destination.enabled) {
                 ++enabled;
-                switch (destination.state) {
+                switch (shown) {
                 case HealthState::Good: ++good; break;
                 case HealthState::Warn: ++warn; break;
                 case HealthState::Bad: ++bad; break;
+                case HealthState::Offline: ++offline; break;
                 case HealthState::Unknown: ++unknown; break;
                 }
             }
@@ -670,7 +680,7 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
 
             Json entry = Json::object();
             entry.set("id", destination.id)
-                .set("state", healthStateName(destination.state))
+                .set("state", healthStateName(shown))
                 .set("resolved", prober && prober->endpoint.valid() ? prober->endpoint.text : std::string())
                 .set("have_rtt", destination.haveRtt)
                 .set("rtt_us", double(destination.rttUs))
@@ -684,10 +694,11 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
                     .set("address", destination.address)
                     .set("family", prober && prober->endpoint.valid() ? (prober->endpoint.family == AF_INET6 ? 6 : 4) : 0)
                     .set("enabled", destination.enabled)
+                    .set("part_time", destination.partTime)
                     .set("order", destination.order)
                     .set("threshold_us", double(destination.thresholdUs))
                     .set("sensitivity", destination.sensitivity)
-                    .set("candidate", healthStateName(destination.candidate))
+                    .set("candidate", healthStateName(reportedState(destination.candidate, destination.partTime)))
                     .set("candidate_streak", destination.candidateStreak)
                     .set("in_flight", double(prober ? prober->inFlight.size() : 0))
                     .set("last_reply_us", double(destination.lastReplyRealUs))
@@ -697,9 +708,10 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
         }
 
         // Worst state wins, so one unreachable host is never hidden behind a
-        // dozen healthy ones.
+        // dozen healthy ones. Part-time hosts that are off take no part at
+        // all: with nothing else to judge there is nothing to report.
         const char *overall = "unknown";
-        if (enabled == 0) {
+        if (enabled == offline) {
             overall = "idle";
         } else if (bad > 0) {
             overall = "bad";
@@ -714,6 +726,7 @@ Json Monitor::buildStateJson(uint64_t now, bool verbose) const
             .set("good", double(good))
             .set("warn", double(warn))
             .set("bad", double(bad))
+            .set("offline", double(offline))
             .set("unknown", double(unknown))
             .set("total", double(client.destinations.size()));
 

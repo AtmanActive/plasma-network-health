@@ -23,6 +23,8 @@ KCM.SimpleKCM {
     // Fixed widths so the header labels line up with the fields below them.
     readonly property int reorderColumnWidth: Kirigami.Units.gridUnit * 4
     readonly property int toggleColumnWidth: Kirigami.Units.gridUnit * 2
+    /// As wide as its header, which is longer than the checkbox in most languages.
+    readonly property int partTimeColumnWidth: Math.max(toggleColumnWidth, Math.ceil(partTimeHeader.implicitWidth))
     readonly property int thresholdColumnWidth: Kirigami.Units.gridUnit * 8
     readonly property int sensitivityColumnWidth: Kirigami.Units.gridUnit * 6
     readonly property int removeColumnWidth: Kirigami.Units.gridUnit * 2
@@ -65,7 +67,8 @@ KCM.SimpleKCM {
                 "address": entry.address !== undefined ? String(entry.address) : "",
                 "thresholdUs": entry.thresholdUs !== undefined ? Number(entry.thresholdUs) : cfg_defaultThresholdUs,
                 "sensitivity": entry.sensitivity !== undefined ? Number(entry.sensitivity) : cfg_defaultSensitivity,
-                "destinationEnabled": entry.enabled !== false
+                "destinationEnabled": entry.enabled !== false,
+                "partTime": entry.partTime === true
             });
         }
     }
@@ -81,7 +84,8 @@ KCM.SimpleKCM {
                 "order": i + 1,
                 "thresholdUs": row.thresholdUs,
                 "sensitivity": row.sensitivity,
-                "enabled": row.destinationEnabled
+                "enabled": row.destinationEnabled,
+                "partTime": row.partTime
             });
         }
         return list;
@@ -97,7 +101,8 @@ KCM.SimpleKCM {
                 "address": entry.address,
                 "thresholdUs": entry.thresholdUs,
                 "sensitivity": entry.sensitivity,
-                "destinationEnabled": entry.enabled !== false
+                "destinationEnabled": entry.enabled !== false,
+                "partTime": entry.partTime === true
             });
         }
         save();
@@ -126,7 +131,8 @@ KCM.SimpleKCM {
             "address": "",
             "thresholdUs": cfg_defaultThresholdUs,
             "sensitivity": cfg_defaultSensitivity,
-            "destinationEnabled": true
+            "destinationEnabled": true,
+            "partTime": false
         });
         save();
     }
@@ -328,6 +334,14 @@ KCM.SimpleKCM {
                 horizontalAlignment: Text.AlignHCenter
             }
             QQC2.Label {
+                id: partTimeHeader
+                text: i18nc("@title:column host that is often switched off on purpose", "Part-time")
+                font: Kirigami.Theme.smallFont
+                opacity: 0.7
+                Layout.preferredWidth: page.partTimeColumnWidth
+                horizontalAlignment: Text.AlignHCenter
+            }
+            QQC2.Label {
                 text: i18nc("@title:column", "Name")
                 font: Kirigami.Theme.smallFont
                 opacity: 0.7
@@ -371,6 +385,7 @@ KCM.SimpleKCM {
                 required property real thresholdUs
                 required property int sensitivity
                 required property bool destinationEnabled
+                required property bool partTime
 
                 readonly property bool addressValid: Utils.isValidAddress(address)
 
@@ -411,6 +426,24 @@ KCM.SimpleKCM {
                     QQC2.ToolTip.text: i18nc("@info:tooltip", "Monitor this destination")
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                }
+
+                // Centred under its header rather than left-aligned in a wide cell.
+                Item {
+                    Layout.preferredWidth: page.partTimeColumnWidth
+                    Layout.fillHeight: true
+
+                    QQC2.CheckBox {
+                        anchors.centerIn: parent
+                        checked: row.partTime
+                        onToggled: {
+                            rows.setProperty(row.index, "partTime", checked);
+                            page.save();
+                        }
+                        QQC2.ToolTip.text: i18nc("@info:tooltip", "This host is often switched off. When it stops answering, show it in blue and leave the overall status alone.")
+                        QQC2.ToolTip.visible: hovered
+                        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    }
                 }
 
                 QQC2.TextField {
@@ -470,7 +503,7 @@ KCM.SimpleKCM {
                         rows.setProperty(row.index, "thresholdUs", value);
                         page.save();
                     }
-                    QQC2.ToolTip.text: i18nc("@info:tooltip", "Replies slower than this count as bad (%1)",
+                    QQC2.ToolTip.text: i18nc("@info:tooltip", "Replies slower than this turn the indicator yellow (%1)",
                                              Utils.formatThreshold(value))
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -486,8 +519,8 @@ KCM.SimpleKCM {
                         rows.setProperty(row.index, "sensitivity", value);
                         page.save();
                     }
-                    QQC2.ToolTip.text: i18np("One bad reply in a row flips the indicator",
-                                             "%1 bad replies in a row flip the indicator", value + 1)
+                    QQC2.ToolTip.text: i18np("The indicator changes colour after one differing reply",
+                                             "The indicator changes colour after %1 differing replies in a row", value + 1)
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 }
@@ -512,7 +545,7 @@ KCM.SimpleKCM {
             Layout.topMargin: Kirigami.Units.largeSpacing
             visible: true
             type: Kirigami.MessageType.Information
-            text: i18n("<b>Threshold</b> is the round-trip time above which a reply is treated as bad. 1000 µs is 1 ms, which suits a wired gateway; hosts on the internet usually need 20000 µs or more.<br/><b>Sensitivity</b> is how many consecutive bad replies are tolerated before the indicator turns red. With the default of 3, one lost packet changes nothing but four in a row do; the same count applies when turning green again.")
+            text: i18n("<b>Part-time</b> is for hosts that are often switched off on purpose, such as a gaming PC or a school laptop. When one stops answering it turns blue instead of red and takes no part in the overall status; while it is on, it counts like any other.<br/><b>Threshold</b> is the round-trip time above which a reply counts as slow and the indicator turns yellow. 1000 µs is 1 ms, which suits a wired gateway; hosts on the internet usually need 20000 µs or more.<br/><b>Sensitivity</b> is how many consecutive replies that disagree with the indicator are tolerated before it changes colour. With the default of 3, one lost or slow packet changes nothing but four in a row do; the same count applies when changing back.")
         }
 
         Item {

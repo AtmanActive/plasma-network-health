@@ -85,6 +85,7 @@ Item {
                     required property string resolved
                     required property string health
                     required property bool haveRtt
+                    required property bool partTime
                     required property real rttUs
                     required property real lossPercent
                     required property real thresholdUs
@@ -94,10 +95,11 @@ Item {
                     width: ListView.view.width
                     height: full.rowHeight
 
-                    readonly property color stateColor: Utils.colorForState(health, root.colorGood, root.colorWarn, root.colorBad, root.colorIdle)
+                    readonly property color stateColor: Utils.colorForState(health, root.colorGood, root.colorWarn, root.colorBad, root.colorOffline, root.colorIdle)
                     readonly property string stateWord: health === "good" ? i18nc("@info network destination is healthy", "Good")
                                                       : health === "warn" ? i18nc("@info destination answers, but slower than its threshold", "Slow")
                                                       : health === "bad" ? i18nc("@info network destination is unhealthy", "Bad")
+                                                      : health === "offline" ? i18nc("@info part-time destination is switched off, which is expected", "Offline")
                                                       : i18nc("@info network destination has not been measured yet", "Unknown")
 
                     Rectangle {
@@ -172,6 +174,9 @@ Item {
                             lines.push(i18nc("@info:tooltip", "Threshold: %1, sensitivity: %2",
                                              Utils.formatThreshold(row.thresholdUs), String(row.sensitivity)));
                             lines.push(i18nc("@info:tooltip", "Packet loss: %1%", row.lossPercent.toFixed(1)));
+                            if (row.partTime) {
+                                lines.push(i18nc("@info:tooltip", "Part-time: being offline is normal"));
+                            }
                             if (row.message.length > 0) {
                                 lines.push("<i>" + Utils.escapeHtml(row.message) + "</i>");
                             }
