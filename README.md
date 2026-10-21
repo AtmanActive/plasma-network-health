@@ -168,6 +168,12 @@ on the *Destinations* page and a *Use the same appearance…* checkbox on the *A
 You can untick either to give one widget a private list or a private look; ticking it again makes that
 widget adopt the shared one.
 
+A widget with a private destination list says so with a warning at the top of its *Destinations*
+page, since it is easy to forget which one you unticked. When you tick sharing back on and its
+own list differs from the shared one, the page shows the shared list it is about to take, and
+offers **Keep This Widget's List** to publish this widget's list to every other widget instead.
+Nothing happens until you press Apply.
+
 Each file carries a revision number, and a widget only publishes when the shared value has not
 moved since it last agreed with it, so two widgets edited at once converge instead of trading
 writes. A widget will not publish an empty list it has had since start-up, which keeps a

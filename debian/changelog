@@ -1,3 +1,23 @@
+plasma-network-health (1.0.6) unstable; urgency=medium
+
+  * Scrolling the destination list with the mouse wheel no longer changes the
+    Threshold or Sensitivity of whichever row passes under the pointer. The
+    fields still respond to their arrow buttons, the keyboard and typing.
+
+ -- AtmanActive <kde.network.health.rxbe3@slmail.me>  Wed, 21 Oct 2026 16:29:25 +0100
+
+plasma-network-health (1.0.5) unstable; urgency=medium
+
+  * A widget whose destination list is not shared now shows a warning on its
+    Destinations page, so edits made there are not mistaken for edits to the
+    list every other widget uses.
+  * Turning destination sharing back on shows the shared list that will
+    replace this widget's own, and offers to publish this widget's list to
+    every other widget instead.
+  * The sharing note no longer claims appearance settings are per widget.
+
+ -- AtmanActive <kde.network.health.rxbe3@slmail.me>  Wed, 21 Oct 2026 16:23:04 +0100
+
 plasma-network-health (1.0.4) unstable; urgency=medium
 
   * Destinations can be marked part-time, for hosts that are often switched

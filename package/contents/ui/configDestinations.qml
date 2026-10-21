@@ -7,6 +7,7 @@ import QtQuick.Layouts
 
 import org.kde.kcmutils as KCM
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.plasmoid
 
 import "utils.js" as Utils
 
@@ -38,6 +39,25 @@ KCM.SimpleKCM {
     property int noticeType: Kirigami.MessageType.Information
     /// The list as it was before the last import, for the Undo action.
     property string undoJson: ""
+
+    /// Whether this widget was sharing when the page opened or was last applied.
+    /// Ticking the box only counts as rejoining when it was not.
+    property bool sharingApplied: true
+    /// Rejoining with a list that differs from the shared one: "" when not,
+    /// "shared" while the shared list is shown and will be taken on Apply, and
+    /// "mine" while this widget's own list is shown and will be published.
+    property string joinChoice: ""
+    /// This widget's own list, kept while the shared one is shown in its place.
+    property string ownListJson: ""
+
+    SharedStore {
+        id: sharedFile
+        // Only ever read from here; the widget itself does the syncing.
+        active: false
+        fileName: "destinations.ini"
+        category: "Destinations"
+        emptyJson: "[]"
+    }
 
     ListModel {
         id: rows
@@ -151,7 +171,64 @@ KCM.SimpleKCM {
         }
     }
 
-    Component.onCompleted: load()
+    /// The sharing box was ticked or unticked by the user.
+    function sharingToggled(checked) {
+        if (!checked) {
+            if (joinChoice === "shared") {
+                // Unticked again before applying: put this widget's own list back.
+                replaceList(Utils.parseDestinations(ownListJson));
+            }
+            joinChoice = "";
+            ownListJson = "";
+            return;
+        }
+        if (sharingApplied) {
+            return; // only ever unticked in this dialog, nothing to join
+        }
+
+        const shared = sharedFile.read();
+        const own = currentList();
+        if (shared.revision === 0 || shared.json === Utils.canonicalDestinations(own)) {
+            return; // nothing shared yet, or the same list: no choice to make
+        }
+
+        // Show the list that Apply is going to keep, rather than swapping it in
+        // behind the user's back once the dialog is closed.
+        ownListJson = JSON.stringify(own);
+        replaceList(Utils.parseDestinations(shared.json));
+        // With nothing of its own there is nothing to choose between.
+        joinChoice = own.length > 0 ? "shared" : "";
+    }
+
+    function keepOwnList() {
+        replaceList(Utils.parseDestinations(ownListJson));
+        joinChoice = "mine";
+    }
+
+    function useSharedList() {
+        replaceList(Utils.parseDestinations(sharedFile.read().json));
+        joinChoice = "shared";
+    }
+
+    /// Called by Plasma on Apply, after the cfg_ values have been written.
+    function saveConfig() {
+        if (sharedBox.checked && joinChoice === "mine") {
+            // Mark this widget as being in step with the shared list as it is
+            // now, so that the difference counts as its own edit and is
+            // published rather than replaced. Written here, once, instead of
+            // through a cfg_ property that Plasma would write back on every
+            // later Apply.
+            Plasmoid.configuration.sharedRevision = sharedFile.read().revision;
+        }
+        sharingApplied = sharedBox.checked;
+        joinChoice = "";
+        ownListJson = "";
+    }
+
+    Component.onCompleted: {
+        sharingApplied = sharedBox.checked;
+        load();
+    }
 
     FileAccess {
         id: fileAccess
@@ -296,18 +373,50 @@ KCM.SimpleKCM {
             id: sharedBox
             Layout.fillWidth: true
             text: i18nc("@option:check", "Use the same destinations in every Network Health widget")
+            onToggled: page.sharingToggled(checked)
         }
 
         QQC2.Label {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.gridUnit
             Layout.bottomMargin: Kirigami.Units.smallSpacing
-            text: sharedBox.checked
-                  ? i18n("This list is shared with your other Network Health widgets — the one on the desktop and the one in the system tray stay in step. Size, colours and the other appearance settings stay separate for each widget.")
-                  : i18n("This widget keeps its own list. Turning sharing back on will replace it with the shared one.")
+            visible: sharedBox.checked && page.joinChoice === ""
+            text: i18n("This list is shared with your other Network Health widgets — the one on the desktop and the one in the system tray stay in step. Appearance has a sharing setting of its own, on the Appearance page.")
             wrapMode: Text.WordWrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont
+        }
+
+        // Easy to miss as grey small print, and easy to forget about later, so
+        // a widget that has gone its own way says so every time.
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: !sharedBox.checked
+            type: Kirigami.MessageType.Warning
+            text: i18n("Only this widget uses this list. Changes made here do not reach your other Network Health widgets.")
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: sharedBox.checked && page.joinChoice !== ""
+            type: page.joinChoice === "mine" ? Kirigami.MessageType.Warning : Kirigami.MessageType.Information
+            text: page.joinChoice === "mine"
+                  ? i18n("When you apply, this widget's own list, shown below, replaces the shared one in every Network Health widget.")
+                  : i18n("This widget's own list differs from the shared one. Turning sharing on replaces it with the shared list, shown below.")
+            actions: [
+                Kirigami.Action {
+                    text: i18nc("@action:button", "Keep This Widget's List")
+                    icon.name: "document-share"
+                    visible: page.joinChoice === "shared"
+                    onTriggered: page.keepOwnList()
+                },
+                Kirigami.Action {
+                    text: i18nc("@action:button", "Use the Shared List")
+                    icon.name: "edit-undo"
+                    visible: page.joinChoice === "mine"
+                    onTriggered: page.useSharedList()
+                }
+            ]
         }
 
         Kirigami.InlineMessage {
@@ -497,6 +606,10 @@ KCM.SimpleKCM {
                     to: 60000000
                     stepSize: 500
                     editable: true
+                    // The wheel belongs to the page: scrolling a long list
+                    // would otherwise quietly change whichever field passed
+                    // under the pointer. Arrows, keys and typing still work.
+                    wheelEnabled: false
                     value: row.thresholdUs
                     Layout.preferredWidth: page.thresholdColumnWidth
                     onValueModified: {
@@ -513,6 +626,7 @@ KCM.SimpleKCM {
                     from: 0
                     to: 1000
                     editable: true
+                    wheelEnabled: false
                     value: row.sensitivity
                     Layout.preferredWidth: page.sensitivityColumnWidth
                     onValueModified: {
